@@ -287,6 +287,68 @@ class SensorSyncAnalyzer:
             print(f"   - {issue}")
         
         print("\n" + "="*60)
+        self.plot_gsr_with_events()
+        self.plot_gaze_distribution()
+
+    
+    def plot_gsr_with_events(self, output_file="gsr_with_events.png"):
+        """
+        Plot Shimmer GSR values with vertical dotted red lines at event timestamps
+        """
+        if "GSR_ohm" not in self.shimmer_df.columns:
+            print("\nERROR: 'GSR_ohm' column not found in Shimmer data.")
+            return
+        
+        print("\n" + "="*60)
+        print("PLOTTING GSR WITH EVENTS")
+        print("="*60)
+
+        fig, ax = plt.subplots(figsize=(14, 6))
+        
+        # Plot GSR
+        ax.plot(self.shimmer_df["pc_timestamp"], self.shimmer_df["GSR_ohm"],
+                label="GSR (ohm)", color="blue", alpha=0.8)
+
+        # Plot vertical lines where event == 1
+        event_times = self.shimmer_df.loc[self.shimmer_df["event"] == 1, "pc_timestamp"].values
+        for t in event_times:
+            ax.axvline(x=t, color="red", linestyle=":", linewidth=1.5, alpha=0.7)
+
+        ax.set_title("Shimmer GSR with Events")
+        ax.set_xlabel("PC Timestamp (s)")
+        ax.set_ylabel("GSR (ohm)")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(output_file, dpi=300)
+        print(f"\nGSR plot saved as '{output_file}'")
+
+    def plot_gaze_distribution(self, output_file="gaze_distribution.png"):
+        """
+        Plot gaze x-y distribution from Neon recordings
+        """
+        if not {"x", "y"}.issubset(self.neon_df.columns):
+            print("\nERROR: Neon data must contain 'x' and 'y' columns for gaze coordinates.")
+            return
+
+        print("\n" + "="*60)
+        print("PLOTTING GAZE DISTRIBUTION")
+        print("="*60)
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.scatter(self.neon_df["x"], self.neon_df["y"], s=5, alpha=0.5)
+
+        ax.set_title("Gaze X-Y Distribution")
+        ax.set_xlabel("X coordinate (px)")
+        ax.set_ylabel("Y coordinate (px)")
+        ax.invert_yaxis()  # Often needed for screen coordinates
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(output_file, dpi=300)
+        print(f"\nGaze distribution plot saved as '{output_file}'")
+
 
 
 # Usage example
