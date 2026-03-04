@@ -354,8 +354,8 @@ class SensorSyncAnalyzer:
 # Usage example
 if __name__ == "__main__":
     # Replace with your actual file paths
-    shimmer_file = "/home/acatalano/VIRTUES/ShimmerRecordings_30-09-25_15-44.csv"
-    neon_file = "/home/acatalano/VIRTUES/NeonRecordings_30-09-25_15-44.csv"
+    shimmer_file = "/home/acatalano/VIRTUES/test_session/session_2026-01-09_14-34-16/gsr.csv"
+    neon_file = "/home/acatalano/VIRTUES/test_session/session_2026-01-09_14-34-16/eye.csv"
     
     analyzer = SensorSyncAnalyzer(shimmer_file, neon_file)
     analyzer.generate_full_report()

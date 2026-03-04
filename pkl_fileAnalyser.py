@@ -10,7 +10,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class PKLSensorAnalyzer:
-    def __init__(self, shimmer_pkl, neon_pkl):
+    def __init__(self,  neon_pkl, shimmer_pkl=None):
         """
         Initialize analyzer with PKL file paths
         """
@@ -31,7 +31,7 @@ class PKLSensorAnalyzer:
         print(f"\nShimmer columns: {list(self.shimmer_df.columns)}")
         print(f"Neon columns: {list(self.neon_df.columns)}")
     
-    def _parse_shimmer_data(self, data):
+    #def _parse_shimmer_data(self, data):
         """
         Parse Shimmer PKL data into DataFrame.
         Handles several stored formats:

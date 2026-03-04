@@ -1,6 +1,7 @@
 %% Load data
-shimmer = readtable('/home/acatalano/VIRTUES/ShimmerRecordings_05-10-25_17-13.csv');
-neon = readtable('/home/acatalano/VIRTUES/NeonRecordings_05-10-25_17-13.csv');
+shimmer = readtable('/home/acatalano/VIRTUES/recordings/subject_ioTry/level_L1/rep_01/session_2026-01-20_16-49-42/gsr.csv');
+neon = readtable('/home/acatalano/VIRTUES/recordings/subject_ioTry/level_L1/rep_01/session_2026-01-20_16-49-42/eye.csv', ReadVariableNames=true);
+events = readtable('/home/acatalano/VIRTUES/recordings/subject_ioTry/level_L1/rep_01/session_2026-01-20_16-49-42/events.csv');
 %% Detrended Standard Deviation
 
 left_raw = neon.pupil_diameter_left;
@@ -50,14 +51,14 @@ fprintf('Noise (RMS of derivative) - Left: %.4f | Right: %.4f\n', ...
 
 %% --- 1. Plot GSR with event markers (use pc_timestamp) ---
 figure('Name','GSR with Events');
-plot(shimmer.pc_timestamp, shimmer.GSR_ohm, 'b', 'LineWidth', 1.2);
+plot(shimmer.pc_time, shimmer.GSR_ohm, 'b', 'LineWidth', 1.2);
 hold on;
 xlabel('PC Timestamp (s)');
 ylabel('GSR (Ohm)');
 title('GSR with Event Markers (using pc\_timestamp)');
 
 % Add red dotted lines where event == 1
-event_times_shimmer = shimmer.pc_timestamp(shimmer.event ~= 0);
+event_times_shimmer = shimmer.pc_time(shimmer.event ~= 0);
 for t = event_times_shimmer'
     xline(t, 'r--', 'LineWidth', 1);
 end
@@ -86,10 +87,10 @@ hold on;
 plot(neon.timestamp_unix_seconds, smooth(neon.pupil_diameter_right), 'g', 'DisplayName', 'Right Pupil');
 
 % Event lines
-event_times_neon = neon.timestamp_unix_seconds(neon.event ~= 0);
-for t = event_times_neon'
-    xline(t, 'r--', 'LineWidth', 1);
-end
+% event_times_neon = neon.timestamp_unix_seconds(neon.event ~= 0);
+% for t = event_times_neon'
+%     xline(t, 'r--', 'LineWidth', 1);
+% end
 
 xlabel('Timestamp (s)');
 ylabel('Pupil Diameter');
