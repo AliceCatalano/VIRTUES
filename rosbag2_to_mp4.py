@@ -29,7 +29,7 @@ from cv_bridge import CvBridge
 # ============================================================
 #  CONFIG  —  edit these as needed
 # ============================================================
-BASE_DIR     = os.path.expanduser("~/VIRTUES/recordings/subject_io_Pink_feedback/Baseline")
+BASE_DIR     = os.path.expanduser("~/VIRTUES/recordings/subject_io_feedback/Baseline")
 IMAGE_TOPIC  = "/endoscope/right/image_raw"
 
 FPS          = 30

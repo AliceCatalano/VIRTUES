@@ -18,10 +18,10 @@
 
 clear; clc; close all;
 
-%% ------------------------------------------------------------------------
+% ------------------------------------------------------------------------
 % Configuration
 % ------------------------------------------------------------------------
-session_folder = '/home/acatalano/VIRTUES/recordings/subject_yh01/level_L1/rep_01';
+session_folder = '/home/acatalano/VIRTUES/recordings/subject_accFix/Baseline/Level2';
 session_folder = replace(session_folder, '~', getenv('HOME'));
 
 % Accelerometer/Force sensor parameters
@@ -56,13 +56,13 @@ else
     % ====================================================================
     % OPTION B: Load from CSV files (default)
     % ====================================================================
-    gsr_file    = fullfile(session_folder, 'gsr.csv');
-    eye_file    = fullfile(session_folder, 'eye.csv');
+    % gsr_file    = fullfile(session_folder, 'gsr.csv');
+    % eye_file    = fullfile(session_folder, 'eye.csv');
     nidaq_file  = fullfile(session_folder, 'accel.csv');
     events_file = fullfile(session_folder, 'events.csv');
     
-    gsr = readtable(gsr_file);
-    eye = readtable(eye_file);
+    % gsr = readtable(gsr_file);
+    % eye = readtable(eye_file);
     nidaq = readtable(nidaq_file);
     
     events = readtable(events_file);
@@ -86,8 +86,8 @@ end
 
 %% Print loaded sample counts
 fprintf('Loaded samples:\n');
-fprintf('  GSR:    %d\n', height(gsr));
-fprintf('  Eye:    %d\n', height(eye));
+% fprintf('  GSR:    %d\n', height(gsr));
+% fprintf('  Eye:    %d\n', height(eye));
 fprintf('  Accel:  %d\n', height(accel));
 fprintf('  Force:  %d\n', height(force));
 fprintf('  Events: %d\n\n', height(events));
@@ -100,11 +100,11 @@ fprintf('  Events: %d\n\n', height(events));
 
 all_pc_times = [];
 
-gsr.t_pc = gsr.timestamp;
-all_pc_times = [all_pc_times; gsr.t_pc];
-
-eye.t_pc = eye.timestamp_unix_seconds;
-all_pc_times = [all_pc_times; eye.t_pc];
+% gsr.t_pc = gsr.timestamp;
+% all_pc_times = [all_pc_times; gsr.t_pc];
+% 
+% eye.t_pc = eye.timestamp_unix_seconds;
+% all_pc_times = [all_pc_times; eye.t_pc];
 
 all_pc_times = [all_pc_times; accel.t_pc];
 
@@ -117,8 +117,8 @@ all_pc_times = [all_pc_times; events.t_pc];
 t0 = min(all_pc_times);
 
 % Convert to relative seconds for plotting
-gsr.t   = gsr.t_pc   - t0;
-eye.t   = eye.t_pc   - t0; 
+% gsr.t   = gsr.t_pc   - t0;
+% eye.t   = eye.t_pc   - t0; 
 accel.t = accel.t_pc - t0;
 force.t = force.t_pc - t0;
 
@@ -129,11 +129,11 @@ fprintf('Unified PC timeline:\n');
 fprintf('  Global start (t=0): %.3f s (PC time)\n', t0);
 fprintf('  Duration:           %.3f s\n', max(all_pc_times - t0));
 fprintf('  Earliest sensor:    ');
-if min(gsr.t_pc) == t0
-    fprintf('GSR\n');
-elseif min(eye.t_pc) == t0
-    fprintf('Eye Tracker\n');
-elseif min(accel.t_pc) == t0
+% if min(gsr.t_pc) == t0
+%     fprintf('GSR\n');
+% elseif min(eye.t_pc) == t0
+%     fprintf('Eye Tracker\n');
+if min(accel.t_pc) == t0
     fprintf('Accelerometer\n');
 elseif min(force.t_pc) == t0
     fprintf('Force Sensors\n');
@@ -144,8 +144,8 @@ fprintf('\n');
 % Sensor Start Times (relative to t0)
 % ------------------------------------------------------------------------
 fprintf('Sensor start times (relative to global t=0):\n');
-fprintf('  GSR:    %.3f s\n', min(gsr.t));
-fprintf('  Eye:    %.3f s\n', min(eye.t));
+% fprintf('  GSR:    %.3f s\n', min(gsr.t));
+% fprintf('  Eye:    %.3f s\n', min(eye.t));
 fprintf('  Accel:  %.3f s\n', min(accel.t));
 fprintf('  Force:  %.3f s\n', min(force.t));
 fprintf('\n');
@@ -363,48 +363,63 @@ figure;
     
     grid on;
     hold on;
+    %%
+    plot_accel_6panel(accel.t, accel.xL, accel.yL, accel.zL, ...
+        event_times, accel_fs, 80, 1000);
+    %% Add event markers
+    function plot_accel_6panel(t, x, y, z,event_times, ...
+                            Fs, bp_lo, bp_hi)
+
+    % Bandpass each axis (already in g after V->G conversion)
+    xbp   = bandpass(x, [bp_lo bp_hi], Fs);
+    ybp   = bandpass(y, [bp_lo bp_hi], Fs);
+    zbp   = bandpass(z, [bp_lo bp_hi], Fs);
+    sumbp = xbp + ybp + zbp;
+
+    % Spectrum of the bandpassed sum
+    [SPEC_f, freq] = positiveFFT(sumbp, Fs);
+
+    figure('Name','Try' , 'Position', [50 50 1400 1100]);
+    sgtitle('Try', 'FontWeight','bold', 'FontSize',10);
+
+    % Subplot 1 — X
+    ax1 = subplot(5,1,1);
+    plot(t, xbp, 'Color', [0.8 0.1 0.1], 'LineWidth', 0.6);
+    ylabel('X (g)'); title('X axis (bandpassed)'); grid on;
+  
+
+    % Subplot 2 — Y
+    ax2 = subplot(5,1,2);
+    plot(t, ybp, 'Color', [0.1 0.6 0.1], 'LineWidth', 0.6);
+    ylabel('Y (g)'); title('Y axis (bandpassed)'); grid on;
+   
+
+    % Subplot 3 — Z
+    ax3 = subplot(5,1,3);
+    plot(t, zbp, 'Color', [0.1 0.2 0.8], 'LineWidth', 0.6);
+    ylabel('Z (g)'); title('Z axis (bandpassed)'); grid on;
+  
+
+    % Subplot 4 — Sum X+Y+Z
+    ax4 = subplot(5,1,4);
+    plot(t, sumbp, 'Color', [0.5 0 0.7], 'LineWidth', 0.6);
+    ylabel('Sum (g)'); title('Sum X+Y+Z (bandpassed)'); grid on;
+   
+
+    % Subplot 5 — Frequency spectrum of sum
+    ax5 = subplot(5,1,5);
+    plot(freq, abs(SPEC_f), 'k', 'LineWidth', 0.7);
+    xlabel('Frequency (Hz)'); ylabel('|FFT|');
+    title('Spectrum of Sum (bandpassed)'); grid on;
+    xlim([0 Fs/2]);
+
+    % Subplot 6 — Force magnitude (downsampled, offset-removed)
     
-    % Add event markersX,freq] = positiveFFT(x,Fs);
-[Y,freq] = positiveFFT(y,Fs);
-[Z,freq] = positiveFFT(z,Fs);
-[SUM,freq] = positiveFFT(signalsum,Fs);
-[BANDSUM,freq] = positiveFFT(sumband,Fs);
-figure(4);
-subplot(5, 1, 1);
-plot(freq,abs(X))
-% xlim([0.1,50]);
-xlabel('Frequency (Hz)');
-ylabel({' X FFT';'Amplitude'});
-box off
-subplot(5, 1, 2);
-hold on;
-% xlim([0.1,50]);
-xlabel('Frequency (Hz)');
-ylabel({' Y FFT';'Amplitude'});
-plot(freq,abs(Y))
-subplot(5, 1, 3);
-hold on;
-xlabel('Frequency(Hz)');
-ylabel({' Z FFT';'Amplitude'});
-plot(freq,abs(Z))
-% xlim([0.1,50]);
-subplot(5, 1, 4);
-hold on;
-xlabel('Frequency(Hz)');
-ylabel({' SUM FFT';'Amplitude'});
-plot(freq,abs(SUM))
-% xlim([0.1,50]);
-subplot(5, 1, 5);
-hold on;
-xlabel('Frequency(Hz)');
-ylabel({'BAND SUM FFT';'Amplitude'});
-plot(freq,abs(BANDSUM))
-% xlim([0.1,50]);
-    for i = 1:length(event_times)
-        xline(event_times(i), 'k--', 'LineWidth', 1.2, 'Alpha', 0.7);
-    end
-    
-    
+
+    % Link time axes (all except spectrum)
+    linkaxes([ax1 ax2 ax3 ax4 ax6], 'x');
+    xlabel(ax6, 'Time (s)');
+end
     %% Smoothed accelerometer (magnitude or first channel)
     figure;
     if ismember('magnitude_smooth', accel.Properties.VariableNames)
