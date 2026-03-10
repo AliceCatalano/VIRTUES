@@ -1,0 +1,457 @@
+%% ========================================================================
+% Orchestrator Recording Data Visualization
+% Unified PC-timestamp timeline (seconds)
+%% ========================================================================
+
+clear; clc;
+
+%% ------------------------------------------------------------------------
+% Configuration
+% ------------------------------------------------------------------------
+session_folder = '/home/acatalano/VIRTUES/recordings/subject_s00H/Baseline/Level1';
+session_folder = replace(session_folder, '~', getenv('HOME'));
+rep = 2;
+accel_fs = 3000;
+force_fs = 3000;
+smooth_window = accel_fs/10;   % 1 second
+
+%% ------------------------------------------------------------------------
+% Load CSV data
+% ------------------------------------------------------------------------
+fprintf('Loading data from: %s\n\n', session_folder);
+
+gsr    = readtable(fullfile(session_folder,'gsr.csv'));
+gsr(1:5, :) = [];
+eye    = readtable(fullfile(session_folder,'eye.csv'));
+nidaq  = readtable(fullfile(session_folder,'accel.csv'));
+events = readtable(fullfile(session_folder,'events.csv'));
+
+
+% Robust block detection using percentile-based threshold
+dt_pc = diff(nidaq.pc_time);
+
+% Ignore negative jitter
+dt_pos = dt_pc(dt_pc > 0);
+
+dt_med = median(dt_pos);
+dt_mad = mad(dt_pos,1);
+
+block_thresh = max(0.01, dt_med + 20*dt_mad);
+
+block_edges = [1; find(dt_pc > block_thresh) + 1];
+n_blocks = numel(block_edges);
+
+fprintf('Detected %d NI acquisition blocks\n', n_blocks);
+
+t_recon_unix = zeros(height(nidaq),1);
+
+for b = 1:n_blocks
+    i0 = block_edges(b);
+    if b < n_blocks
+        i1 = block_edges(b+1) - 1;
+    else
+        i1 = height(nidaq);
+    end
+
+    n = i1 - i0 + 1;
+    if n < 2
+        t_recon_unix(i0) = nidaq.pc_time(i0);  % assign single-sample block
+        continue
+    end
+
+
+    t0 = nidaq.pc_time(i0);   % ABSOLUTE UNIX
+    t_recon_unix(i0:i1) = t0 + (0:n-1)' / accel_fs;
+end
+if any(t_recon_unix == 0)
+    error('Zero timestamps detected in reconstructed accel time');
+end
+
+
+%% ------------------------------------------------------------------------
+% Reconstruct accel + force tables
+% ------------------------------------------------------------------------
+% Reconstruct per-sample time from block start + sample index
+accel = table();
+accel.xL = nidaq.ai1;
+accel.yL = nidaq.ai2;
+accel.zL = nidaq.ai3;
+accel.xR = nidaq.ai4;
+accel.yR = nidaq.ai5;
+accel.zR = nidaq.ai6;
+accel.t_unix = t_recon_unix;
+
+force = table();
+force.F1 = nidaq.ai7  - nidaq.ai13;
+force.F2 = nidaq.ai8  - nidaq.ai14;
+force.F3 = nidaq.ai9 - nidaq.ai15;
+force.F4 = nidaq.ai10 - nidaq.ai16;
+force.F5 = nidaq.ai11 - nidaq.ai17;
+force.F6 = nidaq.ai12 - nidaq.ai18;
+force.t_unix = t_recon_unix;
+
+fprintf('Loaded samples:\n');
+fprintf('  GSR:    %d\n', height(gsr));
+fprintf('  Eye:    %d\n', height(eye));
+fprintf('  Accel:  %d\n', height(accel));
+fprintf('  Force:  %d\n', height(force));
+fprintf('  Events: %d\n\n', height(events));
+
+%%  UNIFIED TIMELINE (SECONDS) =====
+% Convert EVERYTHING to UNIX seconds first
+
+gsr.t_unix    = gsr.pc_time;                 % already UNIX seconds
+eye.t_unix    = eye.timestamp_unix_seconds;
+events.t_unix = events.recording_time;
+
+all_unix = [
+    gsr.t_unix
+    eye.t_unix
+    accel.t_unix
+    force.t_unix
+    events.t_unix
+];
+
+t0_unix = min(all_unix);
+
+% Relative seconds (this is the ONLY timeline used for plots)
+gsr.t    = gsr.t_unix    - t0_unix;
+eye.t    = eye.t_unix    - t0_unix;
+accel.t  = accel.t_unix  - t0_unix;
+force.t  = force.t_unix  - t0_unix;
+
+event_times  = events.t_unix - t0_unix;
+event_labels = events.data;
+
+fprintf('Unified timeline:\n');
+fprintf('  Start (t=0): %.6f UNIX\n', t0_unix);
+fprintf('  Duration:   %.3f s\n\n', max(all_unix - t0_unix));
+fprintf('Accel Fs (reconstructed): %.2f Hz\n', 1/median(diff(accel.t)));
+fprintf('Accel dt std: %.6e s\n', std(diff(accel.t)));
+fprintf('Accel t_unix range: [%.3f %.3f]\n',min(accel.t_unix), max(accel.t_unix));
+
+
+%% Sampling frequency & timing diagnostics
+fprintf('=== Sampling & Timing Diagnostics ===\n');
+
+% Helper inline function
+fs_stats = @(t) struct( ...
+    'fs_med', 1/median(diff(t)), ...
+    'fs_mean',1/mean(diff(t)), ...
+    'dt_std', std(diff(t)), ...
+    'dt_min', min(diff(t)), ...
+    'dt_max', max(diff(t)) );
+
+% GSR
+gsr_stats = fs_stats(gsr.t_unix);
+fprintf('GSR:\n');
+fprintf('  Fs (median): %.2f Hz\n', gsr_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', gsr_stats.fs_mean);
+fprintf('  dt jitter:   %.6f s (std)\n', gsr_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', gsr_stats.dt_min, gsr_stats.dt_max);
+
+% Eye tracker
+eye_stats = fs_stats(eye.t_unix);
+fprintf('Eye tracker:\n');
+fprintf('  Fs (median): %.2f Hz\n', eye_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', eye_stats.fs_mean);
+fprintf('  dt jitter:   %.6f s (std)\n', eye_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', eye_stats.dt_min, eye_stats.dt_max);
+
+% Accelerometer
+accel_stats = fs_stats(accel.t_unix);
+fprintf('Accelerometer:\n');
+fprintf('  Fs (median): %.2f Hz\n', accel_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', accel_stats.fs_mean);
+fprintf('  dt jitter:   %.6e s (std)\n', accel_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', accel_stats.dt_min, accel_stats.dt_max);
+% Force (same clock as accel, but still reported)
+force_stats = fs_stats(force.t_unix);
+fprintf('Force sensors:\n');
+fprintf('  Fs (median): %.2f Hz\n', force_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', force_stats.fs_mean);
+fprintf('  dt jitter:   %.6e s (std)\n', force_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', force_stats.dt_min, force_stats.dt_max);
+
+
+% Compute magnitude per accelerometer, left & right
+accel.mag_L  = sqrt(accel.xL.^2 + accel.yL.^2 + accel.zL.^2);
+accel.mag_R  = sqrt(accel.xR.^2 + accel.yR.^2 + accel.zR.^2);
+
+
+%% block-aware resampling per sensor/channel
+fs_common = 200;                 % aligns with eye tracker
+t_common = (0 : 1/fs_common : max(accel.t))';
+
+% ---- Accelerometers ----
+accel_cols = {'xL','yL','zL','xR','yR','zR'};
+accel_resamp = table();
+for k = 1:numel(accel_cols)
+    c = accel_cols{k};
+    accel_resamp.(c) = block_interp(accel.t, accel.(c), t_common, block_edges);
+end
+
+% Optional: compute per-accelerometer magnitude from resampled data
+accel_resamp.mag_L = sqrt(accel_resamp.xL.^2 + accel_resamp.yL.^2 + accel_resamp.zL.^2);
+accel_resamp.mag_R = sqrt(accel_resamp.xR.^2 + accel_resamp.yR.^2 + accel_resamp.zR.^2);
+
+% ---- Force sensors ----
+force_cols = {'F1','F2','F3','F4','F5','F6'};
+force_resamp = table();
+for k = 1:numel(force_cols)
+    c = force_cols{k};
+    force_resamp.(c) = block_interp(force.t, force.(c), t_common, block_edges);
+end
+
+%% Qualitative signal health metrics
+fprintf('=== Signal Quality Metrics ===\n');
+
+% GSR
+fprintf('GSR:\n');
+fprintf('  NaNs:        %d (%.2f%%)\n', sum(isnan(gsr.GSR_ohm)), 100*mean(isnan(gsr.GSR_ohm)));
+fprintf('  Range:       [%.2f %.2f]\n', min(gsr.GSR_ohm), max(gsr.GSR_ohm));
+fprintf('  RMS diff:    %.4f\n\n', rms(diff(gsr.GSR_ohm)));
+
+fprintf('Accelerometer:\n');
+fprintf('  Left mag RMS:  %.4f\n', rms(accel.mag_L));
+fprintf('  Right mag RMS: %.4f\n', rms(accel.mag_R));
+fprintf('  Left RMS diff: %.4f\n', rms(diff(accel.mag_L)));
+fprintf('  Right RMS diff: %.4f\n\n', rms(diff(accel.mag_R)));
+
+% Force
+fprintf('Force:\n');
+for k = 1:numel(force_cols)
+    c = force_cols{k};
+    fprintf('  %s RMS:   %.4f\n', c, rms(force.(c)));
+    fprintf('  %s RMS d: %.4f\n', c, rms(diff(force.(c))));
+end
+
+% Eye tracking
+fprintf('Eye tracker:\n');
+fprintf('  Blink rate:  %.2f blinks/min\n', ...
+    sum(diff([0; eye.blink]) == 1) / (eye.t(end)/60));
+fprintf('  NaNs pupil L: %d\n', sum(isnan(eye.pupil_diameter_left)));
+fprintf('  NaNs pupil R: %d\n\n', sum(isnan(eye.pupil_diameter_right)));
+
+%% Plot GSR
+figure;
+plot(gsr.t, gsr.GSR_ohm, 'b', 'LineWidth', 1);
+ylabel('GSR (Ω)');
+title(sprintf('GSR – PC-aligned , rep %d', rep));
+grid on; hold on;
+xline(event_times,'k');
+
+%% Eye gaze scatter (distribution)
+figure;
+scatter(eye.x, eye.y, 1, 'r', 'filled', 'MarkerFaceAlpha', 0.3);
+title(sprintf('Gaze Distribution – Neon, rep %d', rep));
+grid on;
+
+%% ------------------------------------------------------------------------
+% Pupil diameter smoothing (Fs-derived)
+% ------------------------------------------------------------------------
+eye_fs = eye_stats.fs_med;
+pupil_smooth_sec = 0.3;                     % 1-second window
+pupil_window = max(3, round(eye_fs * pupil_smooth_sec));
+
+eye.pupil_left_smooth  = movmean(eye.pupil_diameter_left,  pupil_window, 'omitnan');
+eye.pupil_right_smooth = movmean(eye.pupil_diameter_right, pupil_window, 'omitnan');
+
+fprintf('Pupil smoothing:\n');
+fprintf('  Fs: %.2f Hz\n', eye_fs);
+fprintf('  Window: %d samples (%.2f s)\n\n', pupil_window, pupil_window/eye_fs);
+
+figure;
+plot(eye.t, eye.pupil_left_smooth,'b'); hold on;
+plot(eye.t, eye.pupil_right_smooth,'g');
+ylabel('Pupil diameter smoothed(mm)');
+title(sprintf('Pupil Diameter smoothed, rep %d', rep));
+legend('Left','Right');
+grid on;
+xline(event_times,'k');
+%% ------------------------------------------------------------------------
+% Blink
+% ------------------------------------------------------------------------
+% figure;
+% stairs(eye.t, eye.blink,'k','LineWidth',1.5);
+% ylim([-0.1 1.1]);
+% yticks([0 1]);
+% ylabel('Blink');
+% title(sprintf('Blink Detection, rep %d', rep));
+% grid on;
+% xline(event_times,'k');
+
+%% Accelerometer
+figure;
+plot(accel.t, accel.xL,'r', accel.t, accel.yL,'g', accel.t, accel.zL,'b');
+ylabel('Acceleration');
+title(sprintf('Accelerometer – Raw, rep %d', rep));
+legend('x','y','z');
+grid on;
+xline(event_times,'k');
+
+signalsum = (bandpass(accel.xL,[80 1000],3000)+bandpass(accel.yL,[80 1000],3000)+bandpass(accel.zL,[80 1000],3000));
+Fs =3000;
+[X,freq] = positiveFFT(accel.xL,Fs);
+[Y,freq] = positiveFFT(accel.yL,Fs);
+[Z,freq] = positiveFFT(accel.zL,Fs);
+[SUM,freq] = positiveFFT(signalsum,Fs);
+
+
+figure;
+subplot(4,1,1)
+plot(accel.t, bandpass(accel.xL, [80 1000],3000),'r');
+subplot(4,1,2)
+plot(accel.t, bandpass(accel.yL, [80 1000],3000),'g')
+subplot(4,1,3)
+plot(accel.t, bandpass(accel.zL, [80 1000],3000),'b');
+subplot(4,1,4)
+plot(accel.t, (bandpass(accel.xL,[80 1000],3000)+bandpass(accel.yL,[80 1000],3000)+bandpass(accel.zL,[80 1000],3000)))
+
+figure(4);
+subplot(4, 1, 1);
+plot(freq,abs(X))
+% xlim([0.1,50]);
+xlabel('Frequency (Hz)');
+ylabel({' X FFT';'Amplitude'});
+box off
+subplot(4, 1, 2);
+hold on;
+% xlim([0.1,50]);
+xlabel('Frequency (Hz)');
+ylabel({' Y FFT';'Amplitude'});
+plot(freq,abs(Y))
+subplot(4, 1, 3);
+hold on;
+xlabel('Frequency(Hz)');
+ylabel({' Z FFT';'Amplitude'});
+plot(freq,abs(Z))
+% xlim([0.1,50]);
+subplot(4, 1, 4);
+hold on;
+xlabel('Frequency(Hz)');
+ylabel({' SUM FFT';'Amplitude'});
+plot(freq,abs(SUM))
+% xlim([0.1,50]);
+
+% xlim([0.1,50]);
+plot(accel.t, bandpass(accel.xR, [80 1000],3000),'r', accel.t, bandpass(accel.yR, [80 1000],3000),'g', accel.t, bandpass(accel.zR, [80 1000],3000),'b');
+ylabel('Acceleration');
+title(sprintf('Accelerometer – Raw, rep %d', rep));
+legend;
+grid on;
+xline(event_times,'k');
+
+
+%% Force
+figure; hold on;
+
+forcemag = sqrt(force.(force_cols{1}).^2+force.(force_cols{5}).^2+force.(force_cols{6}).^2);
+plot(force.t,forcemag)
+ylabel('Force [V]');
+title(sprintf('Force Sensors, rep %d', rep));
+grid on;
+xline(event_times,'k');
+legend(force_cols);
+%%  BETWEEN-EVENTS ANALYSIS ONLY
+
+if height(events) < 2
+    error('Need at least two events to define analysis window');
+end
+
+t_start = min(event_times);
+t_end   = max(event_times);
+
+fprintf('=== BETWEEN-EVENTS ANALYSIS ===\n');
+fprintf('Window: %.3f – %.3f s (%.3f s duration)\n\n',t_start, t_end, t_end - t_start);
+
+% Crop signals to analysis window
+gsr_A   = gsr(   gsr.t   >= t_start & gsr.t   <= t_end, :);
+eye_A   = eye(   eye.t   >= t_start & eye.t   <= t_end, :);
+accel_A = accel( accel.t >= t_start & accel.t <= t_end, :);
+force_A = force( force.t >= t_start & force.t <= t_end, :);
+
+events_A = events(events.t_unix >= t_start + t0_unix & events.t_unix <= t_end   + t0_unix, :);
+event_times_A = events_A.t_unix - t0_unix;
+
+% Sampling & timing diagnostics (BETWEEN EVENTS ONLY)
+fprintf('=== Sampling & Timing Diagnostics (BETWEEN EVENTS) ===\n');
+
+% GSR
+gsr_stats = fs_stats_safe(gsr_A.t_unix);
+fprintf('GSR:\n');
+fprintf('  Fs (median): %.2f Hz\n', gsr_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', gsr_stats.fs_mean);
+fprintf('  dt jitter:   %.6f s\n',  gsr_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', gsr_stats.dt_min, gsr_stats.dt_max);
+
+% Eye tracker
+eye_stats = fs_stats_safe(eye_A.t_unix);
+fprintf('Eye tracker:\n');
+fprintf('  Fs (median): %.2f Hz\n', eye_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', eye_stats.fs_mean);
+fprintf('  dt jitter:   %.6f s\n',  eye_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n',eye_stats.dt_min, eye_stats.dt_max);
+
+% Accelerometer
+accel_stats = fs_stats_safe(accel_A.t_unix);
+fprintf('Accelerometer:\n');
+fprintf('  Fs (median): %.2f Hz\n', accel_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', accel_stats.fs_mean);
+fprintf('  dt jitter:   %.6e s\n',  accel_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', accel_stats.dt_min, accel_stats.dt_max);
+
+% Force
+force_stats = fs_stats_safe(force_A.t_unix);
+fprintf('Force sensors:\n');
+fprintf('  Fs (median): %.2f Hz\n', force_stats.fs_med);
+fprintf('  Fs (mean):   %.2f Hz\n', force_stats.fs_mean);
+fprintf('  dt jitter:   %.6e s\n',  force_stats.dt_std);
+fprintf('  dt range:    [%.6f %.6f] s\n\n', force_stats.dt_min, force_stats.dt_max);
+
+
+function s = fs_stats_safe(t)
+    if numel(t) < 2
+        s.fs_med  = NaN;
+        s.fs_mean = NaN;
+        s.dt_std  = NaN;
+        s.dt_min  = NaN;
+        s.dt_max  = NaN;
+        return
+    end
+
+    dt = diff(t);
+    s.fs_med  = 1 / median(dt);
+    s.fs_mean = 1 / mean(dt);
+    s.dt_std  = std(dt);
+    s.dt_min  = min(dt);
+    s.dt_max  = max(dt);
+end
+
+function yq = block_interp(t, y, tq, block_edges)
+
+    yq = nan(size(tq));
+
+    for b = 1:numel(block_edges)
+        i0 = block_edges(b);
+        if b < numel(block_edges)
+            i1 = block_edges(b+1)-1;
+        else
+            i1 = numel(t);
+        end
+
+        if i1 - i0 < 1
+            continue
+        end
+
+        tb = t(i0:i1);
+        yb = y(i0:i1);
+
+        mask = tq >= tb(1) & tq <= tb(end);
+        if sum(mask) < 1
+            continue
+        end
+
+        yq(mask) = interp1(tb, yb, tq(mask), 'linear');
+    end
+end
