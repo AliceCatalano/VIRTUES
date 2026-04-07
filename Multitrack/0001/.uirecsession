@@ -1,0 +1,37 @@
+{
+  "ext": ".flac",
+  "sampleRate": 48000,
+  "complete": true,
+  "names": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "mapping": [
+    "i.0",
+    "i.1",
+    "i.2",
+    "i.3",
+    "i.5",
+    "i.6",
+    "l.0",
+    "l.1"
+  ],
+  "files": [
+    "01 Track",
+    "02 Track",
+    "03 Track",
+    "04 Track",
+    "06 Track",
+    "07 Track",
+    "LineL Track",
+    "LineR Track"
+  ],
+  "lengthSamples": 1012768,
+  "lengthSeconds": 21.09933333333333394
+}

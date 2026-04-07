@@ -5,7 +5,7 @@
 
 clear; clc; close all;
 
-session_folder = '/home/acatalano/VIRTUES/recordings/subject_s00H/Baseline1/Level5';
+session_folder = '/home/acatalano/VIRTUES/resting_state';
 session_folder = replace(session_folder, '~', getenv('HOME'));
 
 accel_fs = 3000;   % Hz
@@ -15,8 +15,8 @@ bp_hi    = 1000;
 %% ── Load ─────────────────────────────────────────────────────────────────────
 fprintf('Loading: %s\n\n', session_folder);
 
-nidaq_file  = fullfile(session_folder, 'accel.csv');
-events_file = fullfile(session_folder, 'events.csv');
+nidaq_file  = fullfile(session_folder, 'acc_test_20260312_103619.csv');
+% events_file = fullfile(session_folder, 'events.csv');
 
 if ~isfile(nidaq_file), error('accel.csv not found in %s', session_folder); end
 nidaq = readtable(nidaq_file);
@@ -68,15 +68,15 @@ if n_gaps > 0
 end
 
 %% ── Events ───────────────────────────────────────────────────────────────────
-event_times = [];
-if isfile(events_file)
-    events = readtable(events_file);
-    col = intersect({'recording_time','pc_time'}, events.Properties.VariableNames);
-    if ~isempty(col)
-        event_times = events.(col{1}) - t0;
-        fprintf('Loaded %d events\n', numel(event_times));
-    end
-end
+% event_times = [];
+% if isfile(events_file)
+%     events = readtable(events_file);
+%     col = intersect({'recording_time','pc_time'}, events.Properties.VariableNames);
+%     if ~isempty(col)
+%         event_times = events.(col{1}) - t0;
+%         fprintf('Loaded %d events\n', numel(event_times));
+%     end
+% end
 
 %% ── Force total ──────────────────────────────────────────────────────────────
 force_cols  = {'F1','F2','F3','F4','F5','F6'};
@@ -97,7 +97,7 @@ ax_raw = gobjects(6,1);
 for k = 1:6
     ax_raw(k) = subplot(6,1,k);
     plot(accel.t, accel.(chan_names{k}), 'Color',ch_colors{k}, 'LineWidth',0.5);
-    hold on; add_event_markers(gca, event_times);
+    % hold on; add_event_markers(gca, event_times);
     ylabel('V'); grid on;
     title(sprintf('%s — %s', side_labels{k}, axis_labels{k}), 'FontWeight','normal');
 end
