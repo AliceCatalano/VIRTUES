@@ -1,15 +1,27 @@
 %% VIRTUES — Unified Analysis Script
+<<<<<<< HEAD
 % Sensors: GSR (Shimmer) | Eye tracker (Neon) | Accelerometer + Force (NI-DAQ) Audio Mixer (channels ch12–ch18)
 % Dependencies: positiveFFT.m, cvxEDA.m (optional)
 
 clear; clc; close all;
+=======
+% Sensors: GSR (Shimmer) | Eye tracker (Neon) | Accelerometer + Force (NI-DAQ)
+%          Audio Mixer (channels ch12–ch18)
+% Dependencies: positiveFFT.m, cvxEDA.m (optional)
+
+clear; clc; %close all;
+>>>>>>> woodPC
 
 
 %  CONFIGURATION
 
 
+<<<<<<< HEAD
 BASE_FOLDER = '/run/user/1003/gvfs/smb-share:server=shark,share=acatalano';
 SAVE_PATH   = '/home/acatalano/Desktop/Virtues';
+=======
+BASE_FOLDER = '/home/acatalano/VIRTUES/recordings';
+>>>>>>> woodPC
 
 % NI-DAQ
 accel_fs          = 3000;    % hardware sample rate (Hz)
@@ -19,7 +31,11 @@ n_baseline_offset = 50;      % samples used for resting-offset removal
 V2G               = 1/0.4;  % 0.4 V/g accelerometer sensitivity
 
 % Audio mixer channels (as they appear in audio.csv columns)
+<<<<<<< HEAD
 audio_channels    = {'ch12','ch13','ch14','ch16','ch17','ch18'};
+=======
+audio_channels    = {'ch11','ch12','ch13','ch14','ch16','ch17'};
+>>>>>>> woodPC
 audio_bp_low      = 80;      % bandpass low  cut for mixer (Hz)
 audio_bp_high     = 1000;    % bandpass high cut for mixer (Hz)
 
@@ -43,6 +59,10 @@ scl_sensitivity    = 2.0;    % n*MAD tonic threshold
 
 % Eye
 pupil_smooth_sec = 0.3;      % pupil moving-average window (s)
+<<<<<<< HEAD
+=======
+
+>>>>>>> woodPC
 save_figures = false;
 
 
@@ -70,13 +90,21 @@ folders_to_run = {};   % will be a cell array of {folder_path, label}
 
 switch phase
 
+<<<<<<< HEAD
     % ----- RESTING STATE 
+=======
+    % ----- RESTING STATE --------------------------------------------------
+>>>>>>> woodPC
     case '1'
         idx = input('Resting state index (1 or 2): ', 's');
         f   = fullfile(subject_folder, 'resting_state', sprintf('%s_r%s', subject_id, idx));
         folders_to_run = {{f, sprintf('Resting state %s', idx)}};
 
+<<<<<<< HEAD
     % ----- BASELINE -----
+=======
+    % ----- BASELINE -------------------------------------------------------
+>>>>>>> woodPC
     case '2'
         acq = input('Acquisition number (1 or 2): ', 's');
         baseline_folder = fullfile(subject_folder, sprintf('Baseline%s', acq));
@@ -90,7 +118,11 @@ switch phase
         if isempty(lv_choice), levels = 1:5; else, levels = str2double(lv_choice); end
 
         for lv = levels
+<<<<<<< HEAD
             f = fullfile(baseline_folder, sprintf('Level%d', lv));
+=======
+            f = fullfile(baseline_folder, sprintf('Level%d_X', lv));
+>>>>>>> woodPC
             folders_to_run{end+1} = {f, sprintf('Baseline%s/Level%d', acq, lv)}; %#ok<SAGROW>
 
             redo = fullfile(baseline_folder, sprintf('Level%d_R', lv));
@@ -99,13 +131,21 @@ switch phase
             end
         end
 
+<<<<<<< HEAD
     % ----- TEST ---------
+=======
+    % ----- TEST -----------------------------------------------------------
+>>>>>>> woodPC
     case '3'
         acq = input('Acquisition number (1, 2, or 3): ', 's');
         f   = fullfile(subject_folder, sprintf('Test%s', acq));
         folders_to_run = {{f, sprintf('Test%s', acq)}};
 
+<<<<<<< HEAD
     % ----- REPETITIONS --
+=======
+    % ----- REPETITIONS ----------------------------------------------------
+>>>>>>> woodPC
     case '4'
         level = input('Level (e.g. L1): ', 's');
         level_folder = fullfile(subject_folder, sprintf('level_%s', upper(level)));
@@ -152,7 +192,11 @@ for fi = 1:numel(folders_to_run)
     end
     fprintf('\n%s  --  %s\n', fig_title, data_folder);
 
+<<<<<<< HEAD
     % ---- LOAD FILES ----
+=======
+    % ---- LOAD FILES ------------------------------------------------------
+>>>>>>> woodPC
     gsr    = load_if_exists(fullfile(data_folder, 'gsr.csv'));
     nidaq  = load_if_exists(fullfile(data_folder, 'accel.csv'));
     eye    = load_if_exists(fullfile(data_folder, 'eye.csv'));
@@ -166,6 +210,10 @@ for fi = 1:numel(folders_to_run)
                        'VariableNames',{'recording_time','data'});
     end
     if height(gsr) > 5, gsr(1:5,:) = []; end  % drop header-artifact rows
+<<<<<<< HEAD
+=======
+    
+>>>>>>> woodPC
 
     % ---- BUILD SENSOR TABLES --------------------------------------------
     accel_raw         = table();
@@ -174,13 +222,18 @@ for fi = 1:numel(folders_to_run)
     %accel_raw.pc_time = nidaq.pc_time;
 
     force_raw    = table();
+<<<<<<< HEAD
     force_raw.F1 = nidaq.ai15  - nidaq.ai15;  force_raw.F2 = nidaq.ai16  - nidaq.ai24;
+=======
+    force_raw.F1 = nidaq.ai7  - nidaq.ai15;  force_raw.F2 = nidaq.ai16  - nidaq.ai24;
+>>>>>>> woodPC
     force_raw.F3 = nidaq.ai17  - nidaq.ai25;  force_raw.F4 = nidaq.ai18 - nidaq.ai26;
     force_raw.F5 = nidaq.ai19 - nidaq.ai27;  force_raw.F6 = nidaq.ai20 - nidaq.ai28;
     %force_raw.pc_time = nidaq.pc_time;
     % ---- TIMESTAMP: use pc_time if available, reconstruct otherwise ----------
     if ismember('pc_time', nidaq.Properties.VariableNames)
         fprintf('  Using pc_time (per-sample hardware timestamps)\n');
+<<<<<<< HEAD
         accel_raw.pc_time = nidaq.pc_time;
         force_raw.pc_time = nidaq.pc_time;
     else
@@ -194,6 +247,20 @@ for fi = 1:numel(folders_to_run)
     gsr_col = get_gsr_col(gsr);
 
     % ---- AUDIO MIXER ---
+=======
+        accel_raw.t_unix = nidaq.pc_time;
+        force_raw.t_unix = nidaq.pc_time;
+    else
+        fprintf('  WARNING: pc_time not found — reconstructing from recording_time\n');
+        t_recon = reconstruct_timestamps_from_recording_time(nidaq.recording_time, accel_fs);
+        accel_raw.t_unix = t_recon;
+        force_raw.t_unix = t_recon;
+    end
+
+    gsr_col = get_gsr_col(gsr);
+
+    % ---- AUDIO MIXER -----------------------------------------------------
+>>>>>>> woodPC
     has_audio = false;
     audio_present_ch = {};
     if ~isempty(audio)
@@ -206,9 +273,15 @@ for fi = 1:numel(folders_to_run)
         fprintf('  audio.csv missing — mixer plots will be skipped.\n');
     end
 
+<<<<<<< HEAD
     % ---- SANITY CHECKS 
     fprintf('\nSanity checks\n');
     fprintf('  Samples  accelc /force : %d\n', height(accel_raw));
+=======
+    % ---- SANITY CHECKS --------------------------------------------------
+    fprintf('\nSanity checks\n');
+    fprintf('  Samples  accel/force : %d\n', height(accel_raw));
+>>>>>>> woodPC
     fprintf('  Samples  gsr         : %d\n', height(gsr));
     if ~isempty(eye), fprintf('  Samples  eye         : %d\n', height(eye));
     else,             fprintf('  Eye tracker          : NOT FOUND\n'); end
@@ -325,6 +398,7 @@ for fi = 1:numel(folders_to_run)
 
     [t_trial_start, t_trial_end] = parse_trial_events(events, t0_unix);
     fprintf('  Timeline: t0=%.3f UNIX  duration=%.2f s\n', t0_unix, max(all_unix-t0_unix));
+<<<<<<< HEAD
     % ---- LOAD PRECOMPUTED COLLISIONS ------------------------------------
 
     collision_file = fullfile(data_folder, 'collision_unix.csv');
@@ -358,6 +432,8 @@ for fi = 1:numel(folders_to_run)
     
     % Source label retained for compatibility with existing plotting code
     collision_source = ones(numel(all_collisions),1);
+=======
+>>>>>>> woodPC
 
     % ---- OFFSET REMOVAL + V -> G ----------------------------------------
     for ch = {'xL','yL','zL','xR','yR','zR'}
@@ -384,7 +460,11 @@ for fi = 1:numel(folders_to_run)
     plot_accel_6panel(accel_raw.t, accel_raw.xR, accel_raw.yR, accel_raw.zR, ...
         t_ds, force_mag_ds, event_times, accel_fs, bp_low, bp_high, [fig_title ' | Accel RIGHT']);
 
+<<<<<<< HEAD
     % ---- FORCE PLOT ---
+=======
+    % ---- FORCE PLOT -----------------------------------------------------
+>>>>>>> woodPC
     plot_force_7panel(force_raw, force_cols, t_ds, force_mag_ds, event_times, [fig_title ' | Force']);
 
     % ---- AUDIO MIXER PLOTS ----------------------------------------------
@@ -395,6 +475,7 @@ for fi = 1:numel(folders_to_run)
     end
 
     % ---- COLLISION DETECTION --------------------------------------------
+<<<<<<< HEAD
     % mag_accel_native = max(sqrt(accel_raw.xL.^2 + accel_raw.yL.^2 + accel_raw.zL.^2), ...
     %                        sqrt(accel_raw.xR.^2 + accel_raw.yR.^2 + accel_raw.zR.^2));
     % [mag_accel_ds, t_ds] = antialias_downsample(mag_accel_native, accel_raw.t, ...
@@ -420,6 +501,24 @@ for fi = 1:numel(folders_to_run)
     fprintf('  Collisions loaded: %d\n', numel(all_collisions));
 
     % ---- GSR ANALYSIS -
+=======
+    mag_accel_native = max(sqrt(accel_raw.xL.^2 + accel_raw.yL.^2 + accel_raw.zL.^2), ...
+                           sqrt(accel_raw.xR.^2 + accel_raw.yR.^2 + accel_raw.zR.^2));
+    [mag_accel_ds, t_ds] = antialias_downsample(mag_accel_native, accel_raw.t, ...
+                               fs_native, target_fs_display, 4, ds_factor);
+
+    min_dist_smp = round(min_distance_sec * target_fs_display);
+
+    drv_a    = [0; abs(diff(mag_accel_ds))];
+    thresh_a = max(median(drv_a) + accel_sensitivity*mad(drv_a,1), prctile(drv_a,thresh_percentile));
+    accel_events = detect_peaks(drv_a, t_ds, thresh_a, min_dist_smp);
+
+    all_collisions   = accel_events;
+    collision_source = ones(numel(accel_events), 1);   % 1 = accel only
+    fprintf('  Collisions -- accel: %d\n', numel(all_collisions));
+
+    % ---- GSR ANALYSIS ---------------------------------------------------
+>>>>>>> woodPC
     cvx_ok = false;
     if use_cvxEDA
         conductance_uS = 1e6 ./ gsr.(gsr_col);
@@ -483,7 +582,11 @@ for fi = 1:numel(folders_to_run)
         accel_fs, bp_low, bp_high, audio_bp_low, audio_bp_high, ...
         pupil_smooth_sec, cvx_ok, t_trial_start, t_trial_end, fig_title);
 
+<<<<<<< HEAD
     % ---- STORE RESULTS 
+=======
+    % ---- STORE RESULTS --------------------------------------------------
+>>>>>>> woodPC
     for i = 1:numel(all_collisions)
         r.level          = fig_title;
         r.collision_time = all_collisions(i);
@@ -500,7 +603,11 @@ for fi = 1:numel(folders_to_run)
         figs = findall(0,'Type','figure');
         for fii = 1:numel(figs)
             if contains(get(figs(fii),'Name'), fig_title)
+<<<<<<< HEAD
                 saveas(figs(fii), fullfile(SAVE_PATH, [strrep(get(figs(fii),'Name'),' ','_') '.png']));
+=======
+                saveas(figs(fii), fullfile(data_folder, [strrep(get(figs(fii),'Name'),' ','_') '.png']));
+>>>>>>> woodPC
             end
         end
     end
@@ -608,7 +715,11 @@ function plot_accel_6panel(t, x, y, z, t_force, force_mag, event_times, Fs, bp_l
     xlabel(ax6,'Time (s)');
 end
 
+<<<<<<< HEAD
 % ---- Force 7-panel -----
+=======
+% ---- Force 7-panel -------------------------------------------------------
+>>>>>>> woodPC
 function plot_force_7panel(force_raw, force_cols, t_ds, force_mag_ds, event_times, fig_title)
     figure('Name',fig_title,'Position',[80 80 1400 1200]);
     sgtitle(fig_title,'FontWeight','bold','FontSize',10);
@@ -686,7 +797,11 @@ function plot_audio_mixer(audio, channels, fs_audio, bp_lo, bp_hi, event_times, 
     xlabel(ax(nch+1), 'Time (s)');
 end
 
+<<<<<<< HEAD
 % ---- Pupil diameter ----
+=======
+% ---- Pupil diameter ------------------------------------------------------
+>>>>>>> woodPC
 function plot_pupil(eye, event_times, smooth_sec, fig_title)
     fs_eye    = 1 / median(diff(eye.timestamp_unix_seconds));
     win_pts   = max(3, round(fs_eye * smooth_sec));
@@ -705,7 +820,11 @@ function plot_pupil(eye, event_times, smooth_sec, fig_title)
     xlabel('Time (s)'); ylabel('Pupil diameter (mm)'); legend('Location','best'); grid on;
 end
 
+<<<<<<< HEAD
 % ---- GSR overview ------
+=======
+% ---- GSR overview --------------------------------------------------------
+>>>>>>> woodPC
 function plot_gsr_overview(gsr, mag_accel_ds, force_mag_ds, t_ds, collision_times, collision_source, ...
         gsr_responses, title_str, has_cvx, t_trial_start, t_trial_end)
     gsr_col   = get_gsr_col(gsr);
@@ -1159,7 +1278,10 @@ function [scr_thresh, scl_thresh] = compute_gsr_thresholds_raw(gsr_raw, scr_sens
     delta_slow = abs(diff(gsr_smooth));
     scl_thresh = max(median(delta_slow) + scl_sens*mad(delta_slow,1), 0.5);
 end
+<<<<<<< HEAD
 
+=======
+>>>>>>> woodPC
 function t_recon = reconstruct_timestamps_from_recording_time(recording_time, accel_fs)
 % Reconstruct per-sample timestamps when only recording_time (ROS batch clock)
 % is available instead of pc_time (per-sample hardware back-calculation).

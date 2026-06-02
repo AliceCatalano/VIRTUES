@@ -77,6 +77,7 @@ switch(tasknumber)
         disp("Action: Contact");
 
 end
+%%
 
 mixer_signal = signal.datainre;      
 load( filename, 'data', 'timestamps');
