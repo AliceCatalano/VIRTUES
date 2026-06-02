@@ -19,7 +19,7 @@ n_baseline_offset = 50;      % samples used for resting-offset removal
 V2G               = 1/0.4;  % 0.4 V/g accelerometer sensitivity
 
 % Audio mixer channels (as they appear in audio.csv columns)
-audio_channels    = {'ch12','ch13','ch14','ch16','ch17','ch18'};
+audio_channels    = {'ch11','ch12','ch13','ch14','ch16','ch17'};
 audio_bp_low      = 80;      % bandpass low  cut for mixer (Hz)
 audio_bp_high     = 1000;    % bandpass high cut for mixer (Hz)
 
@@ -91,7 +91,7 @@ switch phase
         if isempty(lv_choice), levels = 1:5; else, levels = str2double(lv_choice); end
 
         for lv = levels
-            f = fullfile(baseline_folder, sprintf('Level%d', lv));
+            f = fullfile(baseline_folder, sprintf('Level%d_X', lv));
             folders_to_run{end+1} = {f, sprintf('Baseline%s/Level%d', acq, lv)}; %#ok<SAGROW>
 
             redo = fullfile(baseline_folder, sprintf('Level%d_R', lv));
@@ -167,19 +167,30 @@ for fi = 1:numel(folders_to_run)
                        'VariableNames',{'recording_time','data'});
     end
     if height(gsr) > 5, gsr(1:5,:) = []; end  % drop header-artifact rows
+    
 
     % ---- BUILD SENSOR TABLES --------------------------------------------
     accel_raw         = table();
     accel_raw.xL      = nidaq.ai9;   accel_raw.yL = nidaq.ai10;   accel_raw.zL = nidaq.ai11;
     accel_raw.xR      = nidaq.ai12;   accel_raw.yR = nidaq.ai13;   accel_raw.zR = nidaq.ai14;
-    accel_raw.pc_time = nidaq.pc_time;
+    %accel_raw.pc_time = nidaq.pc_time;
 
     force_raw    = table();
     force_raw.F1 = nidaq.ai7  - nidaq.ai15;  force_raw.F2 = nidaq.ai16  - nidaq.ai24;
     force_raw.F3 = nidaq.ai17  - nidaq.ai25;  force_raw.F4 = nidaq.ai18 - nidaq.ai26;
     force_raw.F5 = nidaq.ai19 - nidaq.ai27;  force_raw.F6 = nidaq.ai20 - nidaq.ai28;
-    force_raw.pc_time = nidaq.pc_time;
-     
+    %force_raw.pc_time = nidaq.pc_time;
+    % ---- TIMESTAMP: use pc_time if available, reconstruct otherwise ----------
+    if ismember('pc_time', nidaq.Properties.VariableNames)
+        fprintf('  Using pc_time (per-sample hardware timestamps)\n');
+        accel_raw.t_unix = nidaq.pc_time;
+        force_raw.t_unix = nidaq.pc_time;
+    else
+        fprintf('  WARNING: pc_time not found — reconstructing from recording_time\n');
+        t_recon = reconstruct_timestamps_from_recording_time(nidaq.recording_time, accel_fs);
+        accel_raw.t_unix = t_recon;
+        force_raw.t_unix = t_recon;
+    end
 
     gsr_col = get_gsr_col(gsr);
 
@@ -1106,4 +1117,36 @@ function [scr_thresh, scl_thresh] = compute_gsr_thresholds_raw(gsr_raw, scr_sens
     gsr_smooth = movmean(gsr_raw, max(3,round(numel(gsr_raw)*0.01)));
     delta_slow = abs(diff(gsr_smooth));
     scl_thresh = max(median(delta_slow) + scl_sens*mad(delta_slow,1), 0.5);
+end
+function t_recon = reconstruct_timestamps_from_recording_time(recording_time, accel_fs)
+% Reconstruct per-sample timestamps when only recording_time (ROS batch clock)
+% is available instead of pc_time (per-sample hardware back-calculation).
+%
+% recording_time: the ROS clock stamped once per batch (same value repeated
+%                 for all 300 samples in a batch). Corresponds approximately
+%                 to the END of the batch (stamped after data arrives).
+
+    n_samp     = numel(recording_time);
+    t_recon    = zeros(n_samp, 1);
+
+    % Find where the timestamp changes — these are batch boundaries
+    anchor_idx = [1; find(diff(recording_time) > 0) + 1];
+    anchor_t   = recording_time(anchor_idx);  % timestamp of each batch (≈ batch end time)
+
+    for a = 1:numel(anchor_idx)
+        i0 = anchor_idx(a);
+
+        if a < numel(anchor_idx)
+            i1 = anchor_idx(a+1) - 1;
+        else
+            i1 = n_samp;
+        end
+
+        n_in_batch = i1 - i0 + 1;
+
+        % recording_time ≈ end of batch, so back-calculate like accelerometer_node.py does:
+        %   sample_time = batch_end - (samples_from_end / fs)
+        samples_from_end = (n_in_batch - 1 : -1 : 0)';
+        t_recon(i0:i1) = anchor_t(a) - samples_from_end / accel_fs;
+    end
 end

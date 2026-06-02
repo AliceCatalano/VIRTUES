@@ -2,14 +2,14 @@ from pathlib import Path
 import shutil
 
 # --- HARDCODED PATHS ---
-SOURCE_BASE = Path.home() / "smb://shark/acatalano/subject_s00H"
-DEST_BASE = Path("/home/acatalano/VIRTUES/recordings/subject_s03H/videos/L5")
+SOURCE_BASE = Path("/run/user/1002/gvfs/smb-share:server=shark,share=acatalano/subject_s01H")
+DEST_BASE = Path("/run/user/1002/gvfs/smb-share:server=shark,share=acatalano/subject_s01H/videos/Baseline1")
 
 # Ensure destination exists
 DEST_BASE.mkdir(parents=True, exist_ok=True)
 
 # Iterate over all rep_* folders
-for rep_dir in SOURCE_BASE.glob("rep_*"):
+for rep_dir in SOURCE_BASE.glob("Level*"):
     if not rep_dir.is_dir():
         continue
 

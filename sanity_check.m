@@ -4,7 +4,7 @@
 
 clear; clc; close all;
 
-BASE_FOLDER = '/home/acatalano/VIRTUES/recordings';
+BASE_FOLDER = '/home/acatalano/VIRTUES/recordings/';
 
 accel_fs         = 3000;
 audio_fs         = 3000;

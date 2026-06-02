@@ -3,9 +3,9 @@
 % IMPORTANT: run with a clean workspace (clear all) to avoid stale variables
 % contaminating the time axis.
 
-clear; clc; close all;
+clear; clc; %close all;
 
-session_folder = '/home/acatalano/VIRTUES/resting_state';
+session_folder = ['/home/acatalano/VIRTUES/recordings/subject_io/Baseline1/Level1'];
 session_folder = replace(session_folder, '~', getenv('HOME'));
 
 accel_fs = 3000;   % Hz
@@ -15,7 +15,7 @@ bp_hi    = 1000;
 %% ── Load ─────────────────────────────────────────────────────────────────────
 fprintf('Loading: %s\n\n', session_folder);
 
-nidaq_file  = fullfile(session_folder, 'acc_test_20260312_103619.csv');
+nidaq_file  = fullfile(session_folder, 'accel.csv');
 % events_file = fullfile(session_folder, 'events.csv');
 
 if ~isfile(nidaq_file), error('accel.csv not found in %s', session_folder); end
@@ -24,21 +24,21 @@ fprintf('Loaded accel.csv: %d rows\n', height(nidaq));
 
 %% ── Build tables ─────────────────────────────────────────────────────────────
 accel        = table();
-accel.xL     = nidaq.ai1;
-accel.yL     = nidaq.ai2;
-accel.zL     = nidaq.ai3;
-accel.xR     = nidaq.ai4;
-accel.yR     = nidaq.ai5;
-accel.zR     = nidaq.ai6;
+accel.xL     = nidaq.ai9;
+accel.yL     = nidaq.ai10;
+accel.zL     = nidaq.ai11;
+accel.xR     = nidaq.ai12;
+accel.yR     = nidaq.ai13;
+accel.zR     = nidaq.ai14;
 accel.t_pc   = nidaq.pc_time;
 
 force        = table();
-force.F1     = nidaq.ai7  - nidaq.ai13;
-force.F2     = nidaq.ai8  - nidaq.ai14;
-force.F3     = nidaq.ai9  - nidaq.ai15;
-force.F4     = nidaq.ai10 - nidaq.ai16;
-force.F5     = nidaq.ai11 - nidaq.ai17;
-force.F6     = nidaq.ai12 - nidaq.ai18;
+force.F1     = nidaq.ai7  - nidaq.ai15;
+force.F2     = nidaq.ai16  - nidaq.ai24;
+force.F3     = nidaq.ai17  - nidaq.ai25;
+force.F4     = nidaq.ai18 - nidaq.ai26;
+force.F5     = nidaq.ai19 - nidaq.ai27;
+force.F6     = nidaq.ai20 - nidaq.ai28;
 force.t_pc   = nidaq.pc_time;
 
 %% ── Time axis — defined from THIS data, never from workspace ─────────────────
@@ -68,7 +68,7 @@ if n_gaps > 0
 end
 
 %% ── Events ───────────────────────────────────────────────────────────────────
-% event_times = [];
+event_times = [];
 % if isfile(events_file)
 %     events = readtable(events_file);
 %     col = intersect({'recording_time','pc_time'}, events.Properties.VariableNames);
