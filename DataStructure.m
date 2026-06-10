@@ -1,9 +1,9 @@
 clear;clc;
 
-BASE_FOLDER = '/run/user/1003/gvfs/smb-share:server=shark,share=acatalano';
+BASE_FOLDER = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
 
 participants = {'s02N','s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N','s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N','s42N','s43N','s44N','s46N','s48N','s03H','s04H','s06H','s08H','s10H','s12H','s13H','s17H','s19H','s21H','s23H','s25H','s26H','s29H','s31H','s33H','s35H','s38H','s40H','s41H','s45H','s47H'};
-
+% 
 target_fs = 500;
 accel_fs = 3000;
 
@@ -65,33 +65,38 @@ for s = 1:length(participants)
 
     baseline_sections = {'Baseline1','Baseline2'};
 
-    fbaseline_sections = {'Baseline1','Baseline2'};
-
     for a = 1:length(baseline_sections)
-    
+
         section_path = fullfile(BASE_FOLDER, SUBJECT_ID, baseline_sections{a});
-    
+
         if ~isfolder(section_path)
             continue
         end
-    
+
         lev_folders = dir(fullfile(section_path,'Level*'));
         lev_folders = lev_folders([lev_folders.isdir]);
-    
+        valid = false(length(lev_folders),1);
+
+        for k = 1:length(lev_folders)
+            valid(k) = ~contains(lev_folders(k).name,'_');
+        end
+
+        lev_folders = lev_folders(valid);
+
         for l = 1:length(lev_folders)
-    
+
             lev_path = fullfile(lev_folders(l).folder, lev_folders(l).name);
-    
+
             trial = build_trial(lev_path, accel_fs, target_fs, V2G, n_baseline_offset, safe_interp);
-    
+
             if isempty(trial)
                 continue
             end
-    
+
             trial.level = l;
-    
+
             DATA_BASELINE.subjects(s).acq(a).trial(l) = trial;
-    
+
         end
     end
 
@@ -117,22 +122,21 @@ for s = 1:length(participants)
 
     end
 
-    
-
-    training_folder = fullfile(BASE_FOLDER, SUBJECT_ID, 'Training');
+    training_folder = fullfile(BASE_FOLDER, SUBJECT_ID);
 
     if isfolder(training_folder)
 
-        lev_folders = dir(fullfile(training_folder, 'Level*'));
+        lev_folders = dir(fullfile(training_folder, 'level_L*'));
         lev_folders = lev_folders([lev_folders.isdir]);
 
         for l = 1:length(lev_folders)
 
             lev_path = fullfile(lev_folders(l).folder, lev_folders(l).name);
 
-            rep_folders = dir(fullfile(lev_path, 'Rep*'));
+            rep_folders = dir(fullfile(lev_path,'rep_*'));
             rep_folders = rep_folders([rep_folders.isdir]);
-
+            rep_folders = rep_folders(~contains({rep_folders.name},'_X'));
+            
             DATA_TRAINING.subjects(s).lev(l).lev = l;
 
             for r = 1:length(rep_folders)
@@ -154,8 +158,8 @@ for s = 1:length(participants)
     end
 end
 
-save('DATA_BASELINE.mat','DATA_BASELINE','-v7.3');
-save('DATA_TEST.mat','DATA_TEST','-v7.3');
+% save('DATA_BASELINE.mat','DATA_BASELINE','-v7.3');
+% save('DATA_TEST.mat','DATA_TEST','-v7.3');
 save('DATA_REST.mat','DATA_REST','-v7.3');
 save('DATA_TRAINING.mat','DATA_TRAINING','-v7.3');
 
@@ -172,7 +176,7 @@ function trial = build_trial(trial_path, accel_fs, target_fs, V2G, n_baseline_of
     events_file = fullfile(trial_path, 'events.csv');
 
     if ~isfile(accel_file) || ~isfile(events_file)
-        print('No acc or events')
+        fprintf('No acc or events %s', trial_path)
         return
     end
 

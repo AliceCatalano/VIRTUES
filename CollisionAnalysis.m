@@ -1,0 +1,237 @@
+%% CollisionInspector — single acquisition
+% Edit SECTION 1, run the script, inspect the figure, confirm to save.
+
+%% SECTION 1 — TARGET & PARAMETERS
+BASE_FOLDER          = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
+SUBJECT              = 's01H';      % e.g. 's07N', 's03H'
+PHASE                = 'level_L3';  % 'Baseline1','Baseline2','Test1','Test2','level_L1'…'level_L5'
+ACQUISITION          = 'rep_03';    % 'rep_01'…'rep_10' for level phases; 'Level1'…'Level5' for Baseline
+
+ACCEL_FS             = 3000;        % NI-DAQ sampling rate (Hz)
+N_BASELINE_OFFSET    = 50;          % samples for zero-mean baseline
+V2G                  = 1 / 0.4;    % V → g
+BP_LOW               = 80;          % NI-DAQ bandpass low (Hz) — plot only
+BP_HIGH              = 1000;        % NI-DAQ bandpass high (Hz) — plot only
+TARGET_FS            = 500;         % downsample target for NI-DAQ display (Hz)
+
+AUDIO_BP_LOW         = 80;
+AUDIO_BP_HIGH        = 1000;draw_collisions
+AUDIO_RMS_WIN_SEC    = 0.02;        % RMS envelope window (s)
+PEAK_MIN_DIST_SEC    = 2.0;         % MinPeakDistance for findpeaks (s)
+PEAK_HEIGHT_FACTOR   = 2.0;         % MinPeakHeight = FACTOR * mean(env) — ↑ = stricter
+
+INTENSITY_WIN_SEC    = 0.10;        % ±half-window around collision for peak-g readout
+YLIM_ACCEL           = [0 15];      % [] for auto
+YLIM_AUDIO           = [];
+SHOW_RAW_CH          = true;        % show individual NI-DAQ X/Y/Z axes
+
+%% SECTION 2 — PATH RESOLUTION
+subj_folder = fullfile(BASE_FOLDER, ['subject_' SUBJECT]);
+acq_folder  = fullfile(subj_folder, PHASE, ACQUISITION);
+if ~isfolder(acq_folder)
+    if isfolder([acq_folder '_R']), acq_folder = [acq_folder '_R'];
+    else, error('Folder not found: %s', acq_folder); end
+end
+accel_file  = fullfile(acq_folder, 'accel.csv');
+audio_file  = fullfile(acq_folder, 'audio.csv');
+events_file = fullfile(acq_folder, 'events.csv');
+assert(isfile(accel_file),  'Missing: %s', accel_file);
+assert(isfile(events_file), 'Missing: %s', events_file);
+assert(isfile(audio_file),  'Missing audio.csv — cannot detect collisions: %s', audio_file);
+fprintf('\n%s | %s | %s\n%s\n\n', SUBJECT, PHASE, ACQUISITION, acq_folder);
+
+%% SECTION 3 — LOAD & ALIGN
+nidaq  = readtable(accel_file);
+events = readtable(events_file);
+audio  = readtable(audio_file);
+
+% Reconstruct monotonic NI-DAQ clock
+raw_t = nidaq.recording_time;  n = height(nidaq);
+anch  = [1; find(diff(raw_t) ~= 0) + 1];  at = raw_t(anch);
+t_nidaq = zeros(n,1);
+for a = 1:numel(anch)
+    i0 = anch(a);
+    if a < numel(anch)
+        i1 = anch(a+1)-1; np = i1-i0+1;
+        t_nidaq(i0:i1) = at(a) + (0:np-1)' * (at(a+1)-at(a)) / np;
+    else
+        t_nidaq(i0:n) = at(a) + (0:n-i0)' / ACCEL_FS;
+    end
+end
+t0_unix = t_nidaq(1);
+t_niq   = t_nidaq - t0_unix;
+
+% Audio aligned to same epoch
+t_aud  = audio.recording_time - t0_unix;
+dt_a   = diff(t_aud);  fs_audio = 1 / median(dt_a(dt_a > 0));
+fprintf('Audio fs: %.1f Hz\n', fs_audio);
+
+% Trial window
+[t_start_unix, t_end_unix] = parse_trial_window(events);
+if isnan(t_start_unix)||isnan(t_end_unix), error('Cannot parse START/END from events.csv'); end
+t_ws = t_start_unix - t0_unix;  t_we = t_end_unix - t0_unix;
+fprintf('Trial window: %.3f – %.3f s (%.1f s)\n', t_ws, t_we, t_we-t_ws);
+
+%% SECTION 4 — NI-DAQ (display only)
+xL = (nidaq.ai9  - mean(nidaq.ai9 (1:N_BASELINE_OFFSET)))*V2G;
+yL = (nidaq.ai10 - mean(nidaq.ai10(1:N_BASELINE_OFFSET)))*V2G;
+zL = (nidaq.ai11 - mean(nidaq.ai11(1:N_BASELINE_OFFSET)))*V2G;draw_collisions
+xR = (nidaq.ai12 - mean(nidaq.ai12(1:N_BASELINE_OFFSET)))*V2G;
+yR = (nidaq.ai13 - mean(nidaq.ai13(1:N_BASELINE_OFFSET)))*V2G;
+zR = (nidaq.ai14 - mean(nidaq.ai14(1:N_BASELINE_OFFSET)))*V2G;
+mag_nat = max(sqrt(xL.^2+yL.^2+zL.^2), sqrt(xR.^2+yR.^2+zR.^2));
+ds = max(1, round(ACCEL_FS/TARGET_FS));
+[mag_ds, t_ds] = aa_downsample(mag_nat, t_niq, ACCEL_FS, TARGET_FS, 4, ds);
+
+%% SECTION 5 — AUDIO DETECTION
+ch_list = select_audio_channels(audio.Properties.VariableNames);
+assert(~isempty(ch_list), 'No recognised mixer channels in audio.csv');
+fprintf('Audio mixer channels (accelerometer inputs): %s\n', strjoin(ch_list,', '));
+
+ch_bp = zeros(height(audio), numel(ch_list));
+for k = 1:numel(ch_list)
+    raw = double(audio.(ch_list{k})); raw = raw - mean(raw,'omitnan');
+    if numel(raw) > 10*fs_audio, raw = bandpass(raw,[AUDIO_BP_LOW AUDIO_BP_HIGH],fs_audio); end
+    ch_bp(:,k) = raw;
+end
+audio_max_bp = max(abs(ch_bp), [], 2);
+env          = sqrt(movmean(audio_max_bp.^2, max(3, round(fs_audio*AUDIO_RMS_WIN_SEC))));
+
+in_trial  = t_aud >= t_ws & t_aud <= t_we;
+env_trial = env(in_trial);
+t_trial   = t_aud(in_trial);
+thresh    = PEAK_HEIGHT_FACTOR * mean(env_trial);
+[~, locs] = findpeaks(env_trial, t_trial, 'MinPeakDistance', 0.5, 'MinPeakHeight', thresh);
+
+coll_t    = locs(:);
+coll_unix = t0_unix + coll_t;
+n_coll    = numel(coll_t);
+fprintf('\nCollisions detected: %d\n', n_coll);
+for ci = 1:n_coll, fprintf('  [%02d] %.3f s\n', ci, coll_t(ci)); end
+
+%% SECTION 6 — INTENSITY (peak NI-DAQ magnitude around each collision)
+hw       = round(INTENSITY_WIN_SEC * TARGET_FS);
+intens_g = nan(n_coll,1);
+for ci = 1:n_coll
+    [~,ic] = min(abs(t_ds - coll_t(ci)));
+    intens_g(ci) = max(mag_ds(max(1,ic-hw):min(end,ic+hw)));
+end
+
+%% SECTION 7 — FIGURE
+n_rows = 2 + SHOW_RAW_CH*2;
+figure('Name', sprintf('%s | %s | %s', SUBJECT, PHASE, ACQUISITION), 'Units','normalized','Position',[0.02 0.04 0.95 0.88]);
+row = 0;
+
+% Audio mixer — channels faint + max envelope bold + threshold line + peaks
+row=row+1; ax_aud = subplot(n_rows,1,row); hold on;
+clrs_a = lines(numel(ch_list));
+for k = 1:numel(ch_list)
+    plot(t_aud, ch_bp(:,k), 'g', 'LineWidth',0.2, 'DisplayName',ch_list{k});
+end
+%plot(t_aud, audio_max_bp, 'Color',[0.1 0.1 0.7], 'LineWidth',1.2, 'DisplayName','Max');
+plot(t_aud, env, 'r', 'LineWidth',1.5, 'DisplayName','RMS env');
+yline(thresh,'k--','LineWidth',1,'HandleVisibility','off');
+draw_window(t_ws,t_we); draw_collisions(coll_t, env, t_aud,intens_g);
+if ~isempty(YLIM_AUDIO), ylim(YLIM_AUDIO); end
+ylabel('V'); title(sprintf('Audio mixer — accelerometer channels, bandpassed %d–%d Hz (fs≈%.0f Hz)', ...
+    AUDIO_BP_LOW,AUDIO_BP_HIGH,fs_audio));
+legend('Location','northeast','FontSize',7); grid on;
+
+% NI-DAQ magnitude — verification only
+row=row+1; ax_niq = subplot(n_rows,1,row); hold on;
+plot(t_ds, mag_ds, 'Color',[0.2 0.45 0.8],'LineWidth',0.8,'DisplayName','NI-DAQ mag');
+draw_window(t_ws,t_we); draw_collisions(coll_t, mag_ds, t_ds,intens_g);
+if ~isempty(YLIM_ACCEL), ylim(YLIM_ACCEL); end
+ylabel('Magnitude (g)'); title(sprintf('NI-DAQ — verification only, downsampled to %d Hz',TARGET_FS)); grid on;
+
+if SHOW_RAW_CH
+    ds2 = max(1,round(ACCEL_FS/200));  td = t_niq(1:ds2:end);
+    row=row+1; ax_rawL = subplot(n_rows,1,row); hold on;
+    plot(td,xL(1:ds2:end),'r',td,yL(1:ds2:end),'g',td,zL(1:ds2:end),'b','LineWidth',0.5);
+    draw_window(t_ws,t_we); ylabel('g'); title('NI-DAQ — Left (X/Y/Z)');
+    legend('X','Y','Z','Location','northeast','FontSize',7); grid on;
+    row=row+1; ax_rawR = subplot(n_rows,1,row); hold on;
+    plot(td,xR(1:ds2:end),'r',td,yR(1:ds2:end),'g',td,zR(1:ds2:end),'b','LineWidth',0.5);
+    draw_window(t_ws,t_we); ylabel('g'); title('NI-DAQ — Right (X/Y/Z)');
+    legend('X','Y','Z','Location','northeast','FontSize',7); grid on;
+    linkaxes([ax_aud ax_niq ax_rawL ax_rawR],'x');
+else
+    linkaxes([ax_aud ax_niq],'x');
+end
+xlabel('Time (s)');
+sgtitle(sprintf('%s  |  %s  |  %s  —  %d collisions  (threshold = %.1f × mean env)',SUBJECT, PHASE, ACQUISITION, n_coll, PEAK_HEIGHT_FACTOR), 'FontSize',12,'FontWeight','bold');
+
+%% SECTION 8 — SAVE
+if strcmpi(strtrim(input('\nSave results? [y/n]: ','s')), 'y')
+    summary.subject        = SUBJECT;  summary.phase = PHASE;  summary.acquisition = ACQUISITION;
+    summary.acq_folder     = acq_folder;  summary.t0_unix = t0_unix;
+    summary.t_win_start    = t_ws;  summary.t_win_end = t_we;
+    summary.n_collisions   = n_coll;
+    summary.collision_unix = coll_unix;  summary.collision_rel = coll_t;
+    summary.intensity_g    = intens_g;
+    summary.params = struct('accel_fs',ACCEL_FS,'bp_low',BP_LOW,'bp_high',BP_HIGH, ...
+        'target_fs',TARGET_FS,'audio_bp_low',AUDIO_BP_LOW,'audio_bp_high',AUDIO_BP_HIGH, ...
+        'audio_rms_win_sec',AUDIO_RMS_WIN_SEC,'peak_min_dist_sec',PEAK_MIN_DIST_SEC, ...
+        'peak_height_factor',PEAK_HEIGHT_FACTOR,'intensity_win_sec',INTENSITY_WIN_SEC);
+    save(fullfile(acq_folder,'collision_summary.mat'), 'summary');
+    fprintf('Saved: %s\n', fullfile(acq_folder,'collision_summary.mat'));
+else
+    fprintf('Not saved.\n');
+end
+
+%% LOCAL FUNCTIONS
+function [ts, te] = parse_trial_window(ev)
+    ts = NaN; te = NaN;
+    if isempty(ev), return; end
+    if ismember('recording_time', ev.Properties.VariableNames), tc = ev.recording_time;
+    else
+        nm = varfun(@isnumeric, ev,'OutputFormat','uniform');
+        if ~any(nm), return; end; tc = ev{:,find(nm,1)};
+    end
+    if iscell(tc), tc = str2double(tc); end
+    if ~ismember('data',ev.Properties.VariableNames), return; end
+    end_m = contains(ev.data,'END') & ~contains(ev.data,'START');
+    st_m  = contains(ev.data,'START') & ~contains(ev.data,'END');
+    kb_m  = contains(ev.data,'[Publisher]') & contains(ev.data,'event_spacebar');
+    if ~any(end_m), return; end
+    te = tc(find(end_m,1,'last'));
+    kb_b = kb_m & (tc < te);
+    if any(kb_b), ts = tc(find(kb_b,1,'last'));
+    elseif any(st_m), ts = tc(find(st_m,1,'first')); end
+end
+
+function ch = select_audio_channels(col_names)
+    nw = intersect({'ch11','ch12','ch13','ch14','ch16','ch17'}, col_names,'stable');
+    ol = intersect({'ch12','ch13','ch14','ch16','ch17','ch18'}, col_names,'stable');
+    if numel(nw) >= numel(ol), ch = nw; else, ch = ol; end
+end
+
+function [sd, td] = aa_downsample(sig, t, fi, fo, ord, ds)
+    [b,a] = butter(ord, min(fo/2*0.9/(fi/2),0.99),'low');
+    sf = filtfilt(b,a,double(sig));  nd = floor(numel(sf)/ds);
+    sd = zeros(nd,1); td = zeros(nd,1);
+    for k=1:nd, idx=(k-1)*ds+1:k*ds; sd(k)=mean(sf(idx)); td(k)=t(idx(1)); end
+end
+
+function draw_window(tw_s, tw_e)
+    yl = ylim;
+    fill([tw_s tw_e tw_e tw_s],[yl(1) yl(1) yl(2) yl(2)],[0.85 0.95 0.75], ...
+         'EdgeColor','none','FaceAlpha',0.25,'HandleVisibility','off');
+    xline(tw_s,'--','START','Color',[0.3 0.6 0.3],'LineWidth',1.2,'HandleVisibility','off','LabelHorizontalAlignment','right');
+    xline(tw_e,'--','END',  'Color',[0.7 0.2 0.2],'LineWidth',1.2,'HandleVisibility','off','LabelHorizontalAlignment','left');
+end
+
+function draw_collisions(ct, ref_sig, ref_t, intens_g)
+    clr = [0.85 0.2 0.1];
+    for ci = 1:numel(ct)
+        [~,ix] = min(abs(ref_t - ct(ci)));
+        yval = ref_sig(ix)*1.15;
+        dn = ''; if ci==1, dn = 'Collision'; end
+        stem(ct(ci), yval,'Color',clr,'LineWidth',2,'Marker','v', ...
+             'MarkerSize',6,'MarkerFaceColor',clr,'DisplayName',dn);
+        if nargin > 3 && ~isnan(intens_g(ci))
+            text(ct(ci), yval*1.05, sprintf('%d\n%.1fg',ci,intens_g(ci)), ...
+                 'HorizontalAlignment','center','FontSize',7,'Color',clr);
+        end
+    end
+end

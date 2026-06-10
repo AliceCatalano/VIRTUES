@@ -35,7 +35,7 @@ from cv_bridge import CvBridge
 # CONFIG — edit these as needed
 # ============================================================
 
-BASE_DIR = "/run/user/1002/gvfs/smb-share:server=synkjk02.local,share=user%20study/subject_s48N/Baseline2/Level1"
+BASE_DIR = "/run/user/1002/gvfs/smb-share:server=shark,share=acatalano/subject_s01H (2)/level_L1/rep_02/"
 IMAGE_TOPIC = "/endoscope/right/image_raw"
 FPS = 30
 OVERWRITE = False  # set True to re-convert already existing MP4s
