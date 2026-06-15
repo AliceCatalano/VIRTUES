@@ -222,11 +222,11 @@ for fi = 1:numel(folders_to_run)
     %accel_raw.pc_time = nidaq.pc_time;
 
     force_raw    = table();
-<<<<<<< HEAD
+
     force_raw.F1 = nidaq.ai15  - nidaq.ai15;  force_raw.F2 = nidaq.ai16  - nidaq.ai24;
-=======
+
     force_raw.F1 = nidaq.ai7  - nidaq.ai15;  force_raw.F2 = nidaq.ai16  - nidaq.ai24;
->>>>>>> woodPC
+
     force_raw.F3 = nidaq.ai17  - nidaq.ai25;  force_raw.F4 = nidaq.ai18 - nidaq.ai26;
     force_raw.F5 = nidaq.ai19 - nidaq.ai27;  force_raw.F6 = nidaq.ai20 - nidaq.ai28;
     %force_raw.pc_time = nidaq.pc_time;
