@@ -1,15 +1,11 @@
 %% VIRTUES — Unified Analysis Script
-
 % Sensors: GSR (Shimmer) | Eye tracker (Neon) | Accelerometer + Force (NI-DAQ) Audio Mixer (channels ch12–ch18)
 % Dependencies: positiveFFT.m, cvxEDA.m (optional)
 
-clear; clc; 
-
-%  CONFIGURATION
+clear; clc; close all;
 
 BASE_FOLDER = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';
 SAVE_PATH   = '/home/acatalano/Desktop/Virtues';
-
 
 % NI-DAQ
 accel_fs          = 3000;    % hardware sample rate (Hz)
@@ -17,12 +13,12 @@ bp_low            = 80;      % bandpass low  cut (Hz)
 bp_high           = 1000;    % bandpass high cut (Hz)
 n_baseline_offset = 50;      % samples used for resting-offset removal
 V2G               = 1/0.4;  % 0.4 V/g accelerometer sensitivity
-
+resting_state_index  = '1';        % which resting state to use ('1' or '2')
+blink_threshold_mad  = 3.0;        % pupil drops below median - k*MAD = blink
+blink_interp_pad_ms  = 100;        % ms to pad around detected blinks before interpolating
 % Audio mixer channels (as they appear in audio.csv columns)
 
 audio_channels    = {'ch11','ch12','ch13','ch14','ch16','ch17','ch18'};
-
-
 audio_bp_low      = 80;      % bandpass low  cut for mixer (Hz)
 audio_bp_high     = 1000;    % bandpass high cut for mixer (Hz)
 
@@ -46,12 +42,7 @@ scl_sensitivity    = 2.0;    % n*MAD tonic threshold
 
 % Eye
 pupil_smooth_sec = 0.3;      % pupil moving-average window (s)
-
 save_figures = false;
-
-
-%  SUBJECT & PHASE SELECTION  (same logic as sanity_check.m)
-
 
 fprintf('VIRTUES — ANALYSIS\n\n');
 
@@ -73,15 +64,10 @@ phase = input('Select phase (1-4): ', 's');
 folders_to_run = {};   % will be a cell array of {folder_path, label}
 
 switch phase
-% ----- RESTING STATE --------------------------------------------------
-
     case '1'
         idx = input('Resting state index (1 or 2): ', 's');
         f   = fullfile(subject_folder, 'resting_state', sprintf('%s_r%s', subject_id, idx));
         folders_to_run = {{f, sprintf('Resting state %s', idx)}};
-
-
-    % ----- BASELINE -------------------------------------------------------
 
     case '2'
         acq = input('Acquisition number (1 or 2): ', 's');
@@ -108,15 +94,11 @@ switch phase
         end
 
 
-    % ----- TEST -----------------------------------------------------------
-
     case '3'
         acq = input('Acquisition number (1, 2, or 3): ', 's');
         f   = fullfile(subject_folder, sprintf('Test%s', acq));
         folders_to_run = {{f, sprintf('Test%s', acq)}};
 
-
-    % ----- REPETITIONS ----------------------------------------------------
 
     case '4'
         level = input('Level (e.g. L1): ', 's');
@@ -148,7 +130,114 @@ switch phase
         return
 end
 
+fprintf('\n--- Loading resting state baseline (r%s) ---\n', resting_state_index);
 
+rest_folder = fullfile(subject_folder, 'resting_state', ...
+    sprintf('%s_r%s', subject_id, resting_state_index));
+
+if ~isfolder(rest_folder)
+    fprintf('[WARNING] Resting state folder not found:\n  %s\n', rest_folder);
+    fprintf('  Baseline normalization will be SKIPPED.\n\n');
+    has_baseline = false;
+    baseline = struct( ...
+        'gsr_mean',   NaN, 'gsr_std',   NaN, 'gsr_median', NaN, 'gsr_mad', NaN, ...
+        'pupil_L_mean', NaN, 'pupil_L_std', NaN, ...
+        'pupil_R_mean', NaN, 'pupil_R_std', NaN, ...
+        'pupil_mean',   NaN, 'pupil_std',   NaN);
+else
+    has_baseline = true;
+
+    rest_gsr  = load_if_exists(fullfile(rest_folder, 'gsr.csv'));
+    rest_eye  = load_if_exists(fullfile(rest_folder, 'eye.csv'));
+
+    if ~isempty(rest_gsr)
+        if height(rest_gsr) > 5, rest_gsr(1:5,:) = []; end   % drop header artifact
+
+        rest_gsr_col = get_gsr_col(rest_gsr);
+        gsr_rest_raw = rest_gsr.(rest_gsr_col);
+
+        % Remove obvious NaNs / Infs
+        gsr_valid = gsr_rest_raw(isfinite(gsr_rest_raw));
+
+        % Convert to conductance if cvxEDA will be used (same as main pipeline)
+        if use_cvxEDA
+            if strcmp(gsr_unit, 'ohm')
+                gsr_rest_cond = 1e6 ./ gsr_valid;     % µS
+            else
+                gsr_rest_cond = 1000 ./ gsr_valid;    % µS from kΩ
+            end
+            baseline.gsr_mean   = mean(gsr_rest_cond);
+            baseline.gsr_std    = std(gsr_rest_cond);
+            baseline.gsr_median = median(gsr_rest_cond);
+            baseline.gsr_mad    = mad(gsr_rest_cond, 1);
+            fprintf('  GSR baseline (conductance µS): mean=%.4f  std=%.4f  median=%.4f  MAD=%.4f\n', ...
+                baseline.gsr_mean, baseline.gsr_std, baseline.gsr_median, baseline.gsr_mad);
+        else
+            baseline.gsr_mean   = mean(gsr_valid);
+            baseline.gsr_std    = std(gsr_valid);
+            baseline.gsr_median = median(gsr_valid);
+            baseline.gsr_mad    = mad(gsr_valid, 1);
+            fprintf('  GSR baseline (raw Ohm): mean=%.2f  std=%.2f  median=%.2f  MAD=%.2f\n', ...
+                baseline.gsr_mean, baseline.gsr_std, baseline.gsr_median, baseline.gsr_mad);
+        end
+    else
+        fprintf('  [WARNING] gsr.csv not found in resting state folder.\n');
+        baseline.gsr_mean   = NaN;  baseline.gsr_std  = NaN;
+        baseline.gsr_median = NaN;  baseline.gsr_mad  = NaN;
+    end
+
+    if ~isempty(rest_eye) && all(ismember({'pupil_diameter_left','pupil_diameter_right', ...
+            'timestamp_unix_seconds'}, rest_eye.Properties.VariableNames))
+
+        fs_eye_rest = 1 / median(diff(rest_eye.timestamp_unix_seconds));
+
+        pL_raw = rest_eye.pupil_diameter_left;
+        pR_raw = rest_eye.pupil_diameter_right;
+
+        % --- Blink removal via MAD thresholding + interpolation ----------
+        % Strategy: values that drop sharply below a robust floor are blinks.
+        % We detect them, pad the window, then linearly interpolate.
+
+        pL_clean = remove_blinks_mad(pL_raw, fs_eye_rest, ...
+            blink_threshold_mad, blink_interp_pad_ms);
+        pR_clean = remove_blinks_mad(pR_raw, fs_eye_rest, ...
+            blink_threshold_mad, blink_interp_pad_ms);
+
+        % After cleaning, compute baseline stats
+        pL_valid = pL_clean(isfinite(pL_clean));
+        pR_valid = pR_clean(isfinite(pR_clean));
+
+        baseline.pupil_L_mean = mean(pL_valid);
+        baseline.pupil_L_std  = std(pL_valid);
+        baseline.pupil_R_mean = mean(pR_valid);
+        baseline.pupil_R_std  = std(pR_valid);
+
+        % Binocular mean (use whichever eyes are valid sample-by-sample)
+        pBino = mean([pL_clean, pR_clean], 2, 'omitnan');
+        pBino_valid = pBino(isfinite(pBino));
+        baseline.pupil_mean = mean(pBino_valid);
+        baseline.pupil_std  = std(pBino_valid);
+
+        fprintf('  Pupil baseline  fs=%.1f Hz\n', fs_eye_rest);
+        fprintf('    Left  : mean=%.4f mm  std=%.4f mm  (after blink removal)\n', ...
+            baseline.pupil_L_mean, baseline.pupil_L_std);
+        fprintf('    Right : mean=%.4f mm  std=%.4f mm  (after blink removal)\n', ...
+            baseline.pupil_R_mean, baseline.pupil_R_std);
+        fprintf('    Bino  : mean=%.4f mm  std=%.4f mm\n', ...
+            baseline.pupil_mean, baseline.pupil_std);
+
+        % Optional: plot resting state pupil for visual inspection
+        plot_resting_pupil(rest_eye, pL_clean, pR_clean, ...
+            fs_eye_rest, pupil_smooth_sec, subject_id, resting_state_index);
+
+    else
+        fprintf('  [WARNING] eye.csv not found or missing columns in resting state folder.\n');
+        baseline.pupil_L_mean = NaN;  baseline.pupil_L_std = NaN;
+        baseline.pupil_R_mean = NaN;  baseline.pupil_R_std = NaN;
+        baseline.pupil_mean   = NaN;  baseline.pupil_std   = NaN;
+    end
+    fprintf('--- Baseline computation complete ---\n\n');
+end
 %  MAIN LOOP  (one iteration per folder/label pair)
 
 
@@ -163,9 +252,6 @@ for fi = 1:numel(folders_to_run)
         fprintf('[%s] folder not found, skipping.\n', fig_title); continue
     end
     fprintf('\n%s  --  %s\n', fig_title, data_folder);
-
-
-    % ---- LOAD FILES ------------------------------------------------------
 
     gsr    = load_if_exists(fullfile(data_folder, 'gsr.csv'));
     nidaq  = load_if_exists(fullfile(data_folder, 'accel.csv'));
@@ -182,7 +268,6 @@ for fi = 1:numel(folders_to_run)
     if height(gsr) > 5, gsr(1:5,:) = []; end  % drop header-artifact rows
 
 
-    % ---- BUILD SENSOR TABLES --------------------------------------------
     accel_raw         = table();
     accel_raw.xL      = nidaq.ai9;   accel_raw.yL = nidaq.ai10;   accel_raw.zL = nidaq.ai11;
     accel_raw.xR      = nidaq.ai12;   accel_raw.yR = nidaq.ai13;   accel_raw.zR = nidaq.ai14;
@@ -209,10 +294,7 @@ for fi = 1:numel(folders_to_run)
     end 
 
     gsr_col = get_gsr_col(gsr);
-
     
-    % ---- AUDIO MIXER -----------------------------------------------------
-
     has_audio = false;
     audio_present_ch = {};
     if ~isempty(audio)
@@ -347,42 +429,6 @@ for fi = 1:numel(folders_to_run)
     [t_trial_start, t_trial_end] = parse_trial_events(events, t0_unix);
     fprintf('  Timeline: t0=%.3f UNIX  duration=%.2f s\n', t0_unix, max(all_unix-t0_unix));
 
-    % ---- LOAD PRECOMPUTED COLLISIONS ------------------------------------
-
-    collision_file = fullfile(data_folder, 'collision_unix.csv');
-    
-    if isfile(collision_file)
-    
-        collision_unix = readmatrix(collision_file);
-    
-        % Remove NaNs / invalid entries
-        collision_unix = collision_unix(~isnan(collision_unix));
-    
-        % Convert UNIX timestamps to relative timeline
-        all_collisions = collision_unix - t0_unix;
-    
-        % Keep only collisions inside trial window
-        in_trial = all_collisions >= t_trial_start & ...
-                   all_collisions <= t_trial_end;
-    
-        all_collisions = all_collisions(in_trial);
-    
-        fprintf('  Loaded %d collisions from collision_unix.csv\n', ...
-            numel(all_collisions));
-    
-    else
-    
-        warning('collision_unix.csv not found in:\\n%s', data_folder);
-    
-        all_collisions = [];
-    
-    end
-    
-    % Source label retained for compatibility with existing plotting code
-    collision_source = ones(numel(all_collisions),1);
-
-
-
     % ---- OFFSET REMOVAL + V -> G ----------------------------------------
     for ch = {'xL','yL','zL','xR','yR','zR'}
         c = ch{1};
@@ -402,48 +448,11 @@ for fi = 1:numel(folders_to_run)
     [force_mag_ds, t_ds] = antialias_downsample(force_mag_native, accel_raw.t, ...
                                fs_native, target_fs_display, 4, ds_factor);
 
-    % ---- ACCELEROMETER PLOTS (left + right) -----------------------------
-    %plot_accel_6panel(accel_raw.t, accel_raw.xL, accel_raw.yL, accel_raw.zL,t_ds, force_mag_ds, event_times, accel_fs, bp_low, bp_high, [fig_title ' | Accel LEFT']);
-    %plot_accel_6panel(accel_raw.t, accel_raw.xR, accel_raw.yR, accel_raw.zR, t_ds, force_mag_ds, event_times, accel_fs, bp_low, bp_high, [fig_title ' | Accel RIGHT']);
-
-
-
-    % ---- FORCE PLOT -----------------------------------------------------
-
-    % plot_force_7panel(force_raw, force_cols, t_ds, force_mag_ds, event_times, [fig_title ' | Force']);
-    % 
-    % % ---- AUDIO MIXER PLOTS ----------------------------------------------
-    % if has_audio
-    %     audio_fs_est = 1 / median(diff(audio.t(diff(audio.t) > 0)));
-    %     plot_audio_mixer(audio, audio_present_ch, audio_fs_est, ...
-    %         audio_bp_low, audio_bp_high, event_times, [fig_title ' | Audio Mixer']);
-    % end
-
-    % ---- COLLISION DETECTION --------------------------------------------
-
-    % mag_accel_native = max(sqrt(accel_raw.xL.^2 + accel_raw.yL.^2 + accel_raw.zL.^2), ...
-    %                        sqrt(accel_raw.xR.^2 + accel_raw.yR.^2 + accel_raw.zR.^2));
-    % [mag_accel_ds, t_ds] = antialias_downsample(mag_accel_native, accel_raw.t, ...
-    %                            fs_native, target_fs_display, 4, ds_factor);
-    % 
-    % min_dist_smp = round(min_distance_sec * target_fs_display);
-    % 
-    % drv_a    = [0; abs(diff(mag_accel_ds))];
-    % thresh_a = max(median(drv_a) + accel_sensitivity*mad(drv_a,1), prctile(drv_a,thresh_percentile));
-    % accel_events = detect_peaks(drv_a, t_ds, thresh_a, min_dist_smp);
-    % 
-    % all_collisions   = accel_events;
-    % collision_source = ones(numel(accel_events), 1);   % 1 = accel only
-    % fprintf('  Collisions -- accel: %d\n', numel(all_collisions));
-    % ---- ACCEL MAGNITUDE (for plotting only) -----------------------------
-
     mag_accel_native = max(sqrt(accel_raw.xL.^2 + accel_raw.yL.^2 + accel_raw.zL.^2), ...
         sqrt(accel_raw.xR.^2 + accel_raw.yR.^2 + accel_raw.zR.^2));
     
     [mag_accel_ds, t_ds] = antialias_downsample(mag_accel_native,accel_raw.t,fs_native, target_fs_display, 4,ds_factor);
-    
-    fprintf('  Using precomputed collisions from collision_unix.csv\n');
-    fprintf('  Collisions loaded: %d\n', numel(all_collisions));
+   
 
     % ---- GSR ANALYSIS -
 
@@ -457,10 +466,6 @@ for fi = 1:numel(folders_to_run)
     drv_a    = [0; abs(diff(mag_accel_ds))];
     thresh_a = max(median(drv_a) + accel_sensitivity*mad(drv_a,1), prctile(drv_a,thresh_percentile));
     accel_events = detect_peaks(drv_a, t_ds, thresh_a, min_dist_smp);
-
-    all_collisions   = accel_events;
-    collision_source = ones(numel(accel_events), 1);   % 1 = accel only
-    fprintf('  Collisions -- accel: %d\n', numel(all_collisions));
 
     % ---- GSR ANALYSIS ---------------------------------------------------
 
@@ -484,33 +489,7 @@ for fi = 1:numel(folders_to_run)
         if ~cvx_ok, fprintf('  All cvxEDA solvers failed, using raw resistance.\n'); end
     end
 
-    % if ~isempty(all_collisions)
-    %     if cvx_ok
-    %         [scr_thresh, scl_thresh] = compute_gsr_thresholds_cvx(p_cvx, t_cvx, scr_sensitivity, scl_sensitivity);
-    %         gsr_responses = analyze_gsr_cvxEDA(gsr.t, p_cvx, t_cvx, all_collisions, ...
-    %             baseline_before, scr_latency_window, scr_thresh, scl_window_start, scl_window_end, scl_thresh);
-    %     else
-    %         [scr_thresh, scl_thresh] = compute_gsr_thresholds_raw(gsr.(gsr_col), scr_sensitivity, scl_sensitivity);
-    %         gsr_responses = analyze_gsr_raw(gsr.t, gsr.(gsr_col), all_collisions, ...
-    %             baseline_before, scr_latency_window, scr_thresh, scl_window_start, scl_window_end, scl_thresh);
-    %     end
-    %     plot_gsr_overview(gsr, mag_accel_ds, force_mag_ds, t_ds, all_collisions, collision_source, ...
-    %         gsr_responses, fig_title, cvx_ok, t_trial_start, t_trial_end);
-    %     plot_each_collision(gsr, all_collisions, collision_source, gsr_responses, fig_title, cvx_ok, ...
-    %         baseline_before, scr_latency_window, scl_window_end, t_trial_start, t_trial_end);
-    % else
-    %     gsr_responses = init_responses(0);
-    %     figure('Name', ['GSR: ' fig_title]);
-    %     plot(gsr.t, gsr.(gsr_col), 'b', 'LineWidth',1);
-    %     ylabel(gsr_col); xlabel('Time (s)'); title([fig_title ' | GSR (no collisions detected)']);
-    %     grid on; hold on;  add_event_lines(event_times);
-    % end
-
-    % ---- PUPIL DIAMETER -------------------------------------------------
-    % if ~isempty(eye) && all(ismember({'pupil_diameter_left','pupil_diameter_right'}, eye.Properties.VariableNames))
-    %     plot_pupil(eye, event_times, pupil_smooth_sec, fig_title);
-    % end
-
+    
     %% ---- UNIFIED OVERVIEW FIGURE ----------------------------------------
     % One figure, shared x-axis (relative time):
     %   1. Accel sum (L+R, bandpassed) — with collision markers
@@ -521,11 +500,13 @@ for fi = 1:numel(folders_to_run)
     % Events are marked on every panel as dashed vertical lines.
     % Collisions are marked with solid vertical lines, colour-coded by source.
 
-    plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
+     plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
         mag_accel_ds, gsr, audio, audio_present_ch, eye, ...
-        event_times, event_labels, all_collisions, collision_source, ...
+        event_times, event_labels, ...
         accel_fs, bp_low, bp_high, audio_bp_low, audio_bp_high, ...
-        pupil_smooth_sec, cvx_ok, t_trial_start, t_trial_end, fig_title);
+        pupil_smooth_sec, cvx_ok, t_trial_start, t_trial_end, fig_title, ...
+        baseline, has_baseline, ...
+        blink_threshold_mad, blink_interp_pad_ms); 
 
 
     % ---- STORE RESULTS --------------------------------------------------
@@ -621,260 +602,14 @@ function plot_nidaq_gaps(pc_time, accel_fs, fig_title)
     end
 end
 
-% ---- Accel 6-panel (per side) -------------------------------------------
-function plot_accel_6panel(t, x, y, z, t_force, force_mag, event_times, Fs, bp_lo, bp_hi, fig_title)
-    xbp   = bandpass(x,[bp_lo bp_hi],Fs);  ybp = bandpass(y,[bp_lo bp_hi],Fs);
-    zbp   = bandpass(z,[bp_lo bp_hi],Fs);  sumbp = xbp + ybp + zbp;
-    [SPEC_f, freq] = positiveFFT(sumbp, Fs);
-
-    figure('Name',fig_title,'Position',[50 50 1400 1100]);
-    sgtitle(fig_title,'FontWeight','bold','FontSize',10);
-
-    ax1 = subplot(6,1,1);
-    plot(t,xbp,'Color',[0.8 0.1 0.1],'LineWidth',0.6);
-    ylabel('X (g)'); title('X axis (bandpassed)'); grid on; add_event_lines(event_times);
-
-    ax2 = subplot(6,1,2);
-    plot(t,ybp,'Color',[0.1 0.6 0.1],'LineWidth',0.6);
-    ylabel('Y (g)'); title('Y axis (bandpassed)'); grid on; add_event_lines(event_times);
-
-    ax3 = subplot(6,1,3);
-    plot(t,zbp,'Color',[0.1 0.2 0.8],'LineWidth',0.6);
-    ylabel('Z (g)'); title('Z axis (bandpassed)'); grid on; add_event_lines(event_times);
-
-    ax4 = subplot(6,1,4);
-    plot(t,sumbp,'Color',[0.5 0 0.7],'LineWidth',0.6);
-    ylabel('Sum (g)'); title('Sum X+Y+Z (bandpassed)'); grid on; add_event_lines(event_times);
-
-    ax5 = subplot(6,1,5);
-    plot(freq,abs(SPEC_f),'k','LineWidth',0.7);
-    xlabel('Frequency (Hz)'); ylabel('|FFT|'); title('Spectrum of Sum'); grid on; xlim([0 Fs/2]);
-
-    ax6 = subplot(6,1,6);
-    plot(t_force,force_mag,'Color',[0.5 0 0.5],'LineWidth',0.8);
-    ylabel('|Force| (V)'); title('Force magnitude (downsampled)'); grid on; add_event_lines(event_times);
-
-    linkaxes([ax1 ax2 ax3 ax4 ax6],'x');
-    xlabel(ax6,'Time (s)');
-end
-
-
-% ---- Force 7-panel -------------------------------------------------------
-
-function plot_force_7panel(force_raw, force_cols, t_ds, force_mag_ds, event_times, fig_title)
-    figure('Name',fig_title,'Position',[80 80 1400 1200]);
-    sgtitle(fig_title,'FontWeight','bold','FontSize',10);
-    clrs = lines(numel(force_cols));
-    ax   = gobjects(7,1);
-    for k = 1:numel(force_cols)
-        c = force_cols{k};
-        ax(k) = subplot(7,1,k);
-        plot(force_raw.t,force_raw.(c),'Color',clrs(k,:),'LineWidth',0.6);
-        ylabel([c ' (V)']); title(c); grid on; add_event_lines(event_times);
-    end
-    ax(7) = subplot(7,1,7);
-    plot(t_ds,force_mag_ds,'Color',[0.5 0 0.5],'LineWidth',1.0);
-    ylabel('|Force| (V)'); title('Force magnitude (downsampled)'); grid on; add_event_lines(event_times);
-    linkaxes(ax,'x');  xlabel(ax(7),'Time (s)');
-end
-
-% ---- Audio mixer multi-panel plot ----------------------------------------
-function plot_audio_mixer(audio, channels, fs_audio, bp_lo, bp_hi, event_times, fig_title)
-% One panel per channel (bandpassed, FFT underneath) + a summary panel
-% showing all channels overlaid and their bandpassed sum.
-
-    nch = numel(channels);
-    n_panels = nch + 2;   % one per channel + sum panel + FFT panel
-
-    figure('Name', fig_title, 'Position', [60 60 1600 min(200*n_panels, 1400)]);
-    sgtitle(fig_title, 'FontWeight','bold', 'FontSize', 10);
-
-    ax = gobjects(n_panels, 1);
-    clrs = lines(nch);
-
-    sum_bp = zeros(height(audio), 1);
-
-    for k = 1:nch
-        ch  = channels{k};
-        raw = double(audio.(ch));
-
-        % DC removal
-        raw = raw - mean(raw, 'omitnan');
-
-        % Bandpass (only if enough samples)
-        if numel(raw) > 10 * fs_audio
-            raw_bp = bandpass(raw, [bp_lo bp_hi], fs_audio);
-        else
-            raw_bp = raw;
-        end
-
-        sum_bp = sum_bp + raw_bp;
-
-        ax(k) = subplot(n_panels, 1, k);
-        plot(audio.t, raw_bp, 'Color', clrs(k,:), 'LineWidth', 0.5);
-        ylabel('V'); title(sprintf('%s (bandpassed %d–%d Hz)', ch, bp_lo, bp_hi));
-        grid on;
-        add_event_lines(event_times);
-    end
-
-    % Sum panel
-    ax(nch+1) = subplot(n_panels, 1, nch+1);
-    plot(audio.t, sum_bp, 'Color', [0.2 0.2 0.8], 'LineWidth', 0.8);
-    ylabel('V'); title(sprintf('Mixer sum (all %d channels, bandpassed)', nch));
-    grid on;
-    add_event_lines(event_times);
-
-    % FFT of sum
-    ax(nch+2) = subplot(n_panels, 1, nch+2);
-    [Sfft, freqs] = positiveFFT(sum_bp, fs_audio);
-    plot(freqs, abs(Sfft), 'k', 'LineWidth', 0.7);
-    xlabel('Frequency (Hz)');
-    ylabel('|FFT|');
-    title('Spectrum of mixer sum');
-    xlim([0 min(fs_audio/2, 2000)]);
-    grid on;
-
-    linkaxes(ax(1:nch+1), 'x');
-    xlabel(ax(nch+1), 'Time (s)');
-end
-% ---- Pupil diameter ------------------------------------------------------
-
-function plot_pupil(eye, event_times, smooth_sec, fig_title)
-    fs_eye    = 1 / median(diff(eye.timestamp_unix_seconds));
-    win_pts   = max(3, round(fs_eye * smooth_sec));
-    pL_smooth = movmean(eye.pupil_diameter_left,  win_pts,'omitnan');
-    pR_smooth = movmean(eye.pupil_diameter_right, win_pts,'omitnan');
-
-    figure('Name',[fig_title ' | Pupil'],'Position',[60 60 1400 400]);
-    sgtitle(sprintf('%s | Pupil diameter  (%.2f s smoothing, %.0f Hz)',fig_title,smooth_sec,fs_eye),...
-        'FontWeight','bold','FontSize',10);
-
-    plot(eye.t,eye.pupil_diameter_left, 'Color',[0.6 0.6 1.0],'LineWidth',0.5,'DisplayName','Left raw');  hold on;
-    plot(eye.t,eye.pupil_diameter_right,'Color',[0.6 1.0 0.6],'LineWidth',0.5,'DisplayName','Right raw');
-    plot(eye.t,pL_smooth,'b','LineWidth',1.5,'DisplayName','Left smoothed');
-    plot(eye.t,pR_smooth,'g','LineWidth',1.5,'DisplayName','Right smoothed');
-    add_event_lines(event_times);
-    xlabel('Time (s)'); ylabel('Pupil diameter (mm)'); legend('Location','best'); grid on;
-end
-% ---- GSR overview --------------------------------------------------------
-
-function plot_gsr_overview(gsr, mag_accel_ds, force_mag_ds, t_ds, collision_times, collision_source, ...
-        gsr_responses, title_str, has_cvx, t_trial_start, t_trial_end)
-    gsr_col   = get_gsr_col(gsr);
-    gsr_label = 'GSR (Ohm)';  if contains(gsr_col,'CAL'), gsr_label = 'GSR (kOhm)'; end
-    n_plots   = 3 + has_cvx;
-    figure('Name',['GSR Overview: ' title_str],'Position',[30 30 1600 210*n_plots]);
-    p = 0;
-
-    p = p+1;  subplot(n_plots,1,p);
-    plot(t_ds,mag_accel_ds,'b','LineWidth',0.8); hold on;
-    mark_collisions(collision_times);  mark_trial(t_trial_start,t_trial_end);
-    ylabel('|accel| (g)'); title('Accelerometer magnitude'); grid on;
-
-    p = p+1;  subplot(n_plots,1,p);
-    plot(t_ds,force_mag_ds,'Color',[0.5 0 0.5],'LineWidth',0.8); hold on;
-    mark_collisions(collision_times);  mark_trial(t_trial_start,t_trial_end);
-    ylabel('|force| (V)'); title('Force magnitude'); grid on;
-
-    p = p+1;  subplot(n_plots,1,p);
-    plot(gsr.t,gsr.(gsr_col),'b','LineWidth',1); hold on;
-    yl = ylim;
-    for i = 1:numel(collision_times)
-        switch collision_source(i)
-            case 1, ls='-';  src_sym='A';
-            case 2, ls='--'; src_sym='F';
-            case 3, ls=':';  src_sym='B';
-            otherwise, ls='--'; src_sym='?';
-        end
-        r = gsr_responses(i);
-        if r.has_scr && r.has_scl, col=[0.8 0 0];
-        elseif r.has_scr,          col=[0.8 0 0.8];
-        elseif r.has_scl,          col=[0 0.6 0.7];
-        else,                      col=[0.4 0.4 0.4]; 
-        end
-        xline(collision_times(i),ls,'Color',col,'LineWidth',2,'HandleVisibility','off');
-        text(collision_times(i),yl(2),sprintf('%d%s',i,src_sym),'FontSize',7,'Color',col,...
-            'HorizontalAlignment','center','VerticalAlignment','top');
-    end
-    mark_trial(t_trial_start,t_trial_end);
-    ylabel(gsr_label); title('Raw GSR  (red=SCR+SCL  magenta=SCR  cyan=SCL  grey=none)'); grid on;
-
-    if has_cvx
-        p = p+1;  subplot(n_plots,1,p); hold on;
-        plot(gsr.t,gsr.scl,'b','LineWidth',1.2,'DisplayName','Tonic SCL');
-        plot(gsr.t,gsr.scr,'r','LineWidth',0.8,'DisplayName','Phasic SCR');
-        mark_collisions(collision_times);  mark_trial(t_trial_start,t_trial_end);
-        legend('Location','best'); ylabel('z-uS');
-        title('cvxEDA: Tonic SCL (blue) + Phasic SCR (red)'); grid on;
-    end
-    sgtitle([title_str ' | solid=accel  dash=force  dot=both | red=SCR+SCL  mag=SCR  cyan=SCL  grey=none'],...
-        'FontWeight','bold','FontSize',8);
-end
-
-% ---- Per-collision GSR panels -------------------------------------------
-function plot_each_collision(gsr, collision_times, collision_source, gsr_responses, ...
-        title_str, has_cvx, baseline_before, scr_window, scl_end, t_trial_start, t_trial_end)
-    n = numel(collision_times);  n_cols = min(3,n);  n_rows = ceil(n/n_cols);
-    figure('Name',['Collision Detail: ' title_str],'Position',[50 50 n_cols*500 n_rows*360]);
-    for i = 1:n
-        ax = subplot(n_rows,n_cols,i);
-        plot_collision_panel(ax,gsr,get_gsr_col(gsr),get_gsr_label(gsr),...
-            collision_times(i),collision_source(i),gsr_responses(i),i,n,...
-            has_cvx,baseline_before,scr_window,scl_end,t_trial_start,t_trial_end);
-    end
-    sgtitle(['Collisions: ' title_str ' | A=accel  F=force  B=both | red=SCR+SCL  mag=SCR  cyan=SCL'],...
-        'FontWeight','bold','FontSize',8);
-end
-
-% ---- Single collision GSR panel -----------------------------------------
-function plot_collision_panel(ax, gsr, gsr_col, gsr_label, t_col, src, resp, ...
-        col_idx, n_total, has_cvx, baseline_before, scr_window, scl_end, t_trial_start, t_trial_end)
-    pre_s = baseline_before+0.5;  post_s = scl_end+1.5;
-    zm    = (gsr.t >= t_col-pre_s) & (gsr.t <= t_col+post_s);
-    t_rel = gsr.t(zm) - t_col;
-    if ~any(zm), title(ax,sprintf('Col %d -- no data',col_idx)); return; end
-
-    plot(ax,t_rel,gsr.(gsr_col)(zm),'b','LineWidth',1.2); hold(ax,'on');
-    if has_cvx && ismember('scr',gsr.Properties.VariableNames)
-        yyaxis(ax,'right');
-        plot(ax,t_rel,gsr.scr(zm),'r','LineWidth',1,'DisplayName','SCR');
-        plot(ax,t_rel,gsr.scl(zm),'Color',[0 0.6 0],'LineWidth',1,'DisplayName','SCL');
-        ylabel(ax,'SCR/SCL (z-uS)');  yyaxis(ax,'left');
-    end
-    xline(ax, 0,               'r--','LineWidth',1.8,'HandleVisibility','off');
-    xline(ax,-baseline_before, ':' ,'Color',[0.5 0.5 0.5],'LineWidth',1,'HandleVisibility','off');
-    xline(ax, scr_window,      '--','Color',[0.9 0.5 0],  'LineWidth',1,'HandleVisibility','off');
-    xline(ax, scl_end,         ':' ,'Color',[0 0.6 0.7],  'LineWidth',1,'HandleVisibility','off');
-    if ~isnan(resp.baseline)
-        yline(ax,resp.baseline,'--','Color',[0 0 0.7],'LineWidth',1,'HandleVisibility','off'); end
-    for tr_t = {t_trial_start, t_trial_end}
-        tr = tr_t{1};
-        if ~isnan(tr) && (tr-t_col) >= -pre_s && (tr-t_col) <= post_s
-            xline(ax,tr-t_col,'-','Color',[0 0.7 0],'LineWidth',2,'HandleVisibility','off'); end
-    end
-    if resp.has_scr
-        idx = find(gsr.t >= t_col+resp.scr_latency,1);
-        if ~isempty(idx) && zm(idx)
-            plot(ax,resp.scr_latency,gsr.(gsr_col)(idx),'ro','MarkerSize',8,'LineWidth',2,'HandleVisibility','off'); end
-    end
-    src_names  = {'Accel','Force','Both'};
-    src_colors = {[0.2 0.4 0.9],[0.6 0.1 0.6],[0.1 0.6 0.1]};
-    src_name   = src_names{min(src,3)};  src_col = src_colors{min(src,3)};
-    scr_str = '-';  scl_str = '-';
-    if resp.has_scr, scr_str = sprintf('lat=%.2fs amp=%.1f',resp.scr_latency,resp.scr_amplitude); end
-    if resp.has_scl, scl_str = sprintf('D=%.1f',resp.scl_change); end
-    title(ax,sprintf('#%d/%d  t=%.2fs  [%s]\nSCR:%s  SCL:%s',col_idx,n_total,t_col,src_name,scr_str,scl_str),'FontSize',8);
-    text(ax,0.01,0.99,src_name,'Units','normalized','FontSize',8,'FontWeight','bold','Color',src_col,...
-        'VerticalAlignment','top','BackgroundColor',[src_col 0.15]);
-    xlabel(ax,'Time rel. collision (s)'); ylabel(ax,gsr_label); grid(ax,'on');
-end
-
 % ---- UNIFIED OVERVIEW FIGURE --------------------------------------------
 function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
         mag_accel_ds, gsr, audio, audio_present_ch, eye, ...
-        event_times, event_labels, all_collisions, collision_source, ...
+        event_times, event_labels, ...
         accel_fs, bp_lo, bp_hi, audio_bp_lo, audio_bp_hi, ...
-        pupil_smooth_sec, cvx_ok, t_trial_start, t_trial_end, fig_title)
+        pupil_smooth_sec, cvx_ok, t_trial_start, t_trial_end, fig_title, ...
+        baseline, has_baseline, ...
+        blink_threshold_mad, blink_interp_pad_ms) 
 
     gsr_col   = get_gsr_col(gsr);
     gsr_label = 'GSR (Ohm)';
@@ -887,10 +622,8 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
     % Determine number of rows: accel_sum | [audio_sum] | force | gsr | [pupil]
     n_rows = 3 + has_audio + has_eye;
 
-    figure('Name', ['OVERVIEW: ' fig_title], ...
-           'Position', [20 20 1700 220*n_rows]);
-    sgtitle(sprintf('%s  |  Unified Overview', fig_title), ...
-            'FontWeight','bold','FontSize',11);
+    figure('Name', ['OVERVIEW: ' fig_title],'Position', [20 20 1700 220*n_rows]);
+    sgtitle(sprintf('%s  |  Unified Overview', fig_title),'FontWeight','bold','FontSize',11);
 
     ax = gobjects(n_rows, 1);
     row = 0;
@@ -920,7 +653,6 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
     legend('Location','northeast','FontSize',7);
     grid on;
     add_event_lines(event_times);
-    mark_collisions_colored(all_collisions, collision_source);
     mark_trial(t_trial_start, t_trial_end);
 
     % ---- Row 2 (optional): Audio mixer sum -------------------------------
@@ -953,7 +685,6 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
         legend('Location','northeast','FontSize',7);
         grid on;
         add_event_lines(event_times);
-        mark_collisions_colored(all_collisions, collision_source);
         mark_trial(t_trial_start, t_trial_end);
     end
 
@@ -965,9 +696,7 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
     ylabel('|Force| (V)');
     title('Force sensor magnitude (downsampled)');
     grid on;
-    add_event_lines(event_times);
-    mark_collisions_colored(all_collisions, collision_source);
-    mark_trial(t_trial_start, t_trial_end);
+    add_event_lines(event_times);mark_trial(t_trial_start, t_trial_end);
 
     % ---- Row 4: GSR (raw or tonic SCL) ----------------------------------
     row = row + 1;
@@ -975,27 +704,71 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
     hold on;
 
     if cvx_ok && ismember('scl', gsr.Properties.VariableNames)
+        % --- Z-score SCL/SCR relative to resting state ---
+        if has_baseline && isfinite(baseline.gsr_mean) && baseline.gsr_std > 0
+            scl_norm = (gsr.scl - baseline.gsr_mean) / baseline.gsr_std;
+            scr_norm = (gsr.scr - baseline.gsr_mean) / baseline.gsr_std;
+            y_label_gsr  = 'GSR (z-score vs rest)';
+            norm_note    = ' [z-scored vs resting state]';
+        else
+            scl_norm = gsr.scl;
+            scr_norm = gsr.scr;
+            y_label_gsr = 'z-µS';
+            norm_note   = ' [no baseline available]';
+        end
+
         yyaxis left;
-        plot(gsr.t, gsr.(gsr_col), 'Color',[0.6 0.6 1.0], 'LineWidth',0.6, 'DisplayName','GSR raw');
-        ylabel(gsr_label);
+        % Raw GSR as light background reference
+        gsr_raw_vals = gsr.(gsr_col);
+        if has_baseline && isfinite(baseline.gsr_mean) && baseline.gsr_std > 0
+            gsr_raw_norm = (gsr_raw_vals - baseline.gsr_mean) / baseline.gsr_std;
+        else
+            gsr_raw_norm = gsr_raw_vals;
+        end
+        plot(gsr.t, gsr_raw_norm, 'Color',[0.6 0.6 1.0], 'LineWidth',0.6, 'DisplayName','GSR raw');
+        ylabel(y_label_gsr);
+
         yyaxis right;
-        plot(gsr.t, gsr.scl, 'b', 'LineWidth',1.2, 'DisplayName','SCL (tonic)');
-        plot(gsr.t, gsr.scr, 'r', 'LineWidth',0.7, 'DisplayName','SCR (phasic)');
-        ylabel('z-µS');
+        plot(gsr.t, scl_norm, 'b', 'LineWidth',1.2, 'DisplayName','SCL tonic');
+        plot(gsr.t, scr_norm, 'r', 'LineWidth',0.7, 'DisplayName','SCR phasic');
+        ylabel('Normalised z-µS');
+
         yyaxis left;
+        title(['GSR — cvxEDA SCL/SCR' norm_note]);
+
     else
-        plot(gsr.t, gsr.(gsr_col), 'b', 'LineWidth',1.0, 'DisplayName','GSR raw');
-        ylabel(gsr_label);
+        % --- Raw resistance, percent change from resting baseline ---------
+        gsr_raw_vals = gsr.(gsr_col);
+
+        if has_baseline && isfinite(baseline.gsr_mean) && baseline.gsr_std > 0
+            % Z-score: (x - mu_rest) / sigma_rest
+            gsr_plot    = (gsr_raw_vals - baseline.gsr_mean) / baseline.gsr_std;
+            y_label_gsr = 'GSR (z-score vs rest)';
+            norm_note   = sprintf(' [z-scored  rest µ=%.1f σ=%.1f]', ...
+                baseline.gsr_mean, baseline.gsr_std);
+
+            % Overlay a horizontal reference band at 0 ± 1 SD
+            yline(0,  'k--', 'LineWidth',0.8, 'HandleVisibility','off');
+            yline( 1, ':',   'Color',[0.5 0.5 0.5], 'LineWidth',0.6, 'HandleVisibility','off');
+            yline(-1, ':',   'Color',[0.5 0.5 0.5], 'LineWidth',0.6, 'HandleVisibility','off');
+        else
+            gsr_plot    = gsr_raw_vals;
+            y_label_gsr = gsr_label;
+            norm_note   = ' [no baseline]';
+        end
+
+        plot(gsr.t, gsr_plot, 'b', 'LineWidth',1.0, 'DisplayName','GSR');
+        ylabel(y_label_gsr);
+        title(['GSR' norm_note]);
     end
 
-    title('GSR  (blue=tonic SCL  red=phasic SCR  if cvxEDA available)');
     legend('Location','northeast','FontSize',7);
     grid on;
     add_event_lines(event_times);
-    mark_collisions_colored(all_collisions, collision_source);
+    
     mark_trial(t_trial_start, t_trial_end);
 
-    % ---- Row 5 (optional): Pupil diameter smoothed ----------------------
+    % ---- Row 5 (optional): Pupil diameter — baseline normalised ----------
     if has_eye
         row = row + 1;
         ax(row) = subplot(n_rows, 1, row);
@@ -1003,30 +776,63 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
 
         fs_eye  = 1 / median(diff(eye.timestamp_unix_seconds));
         win_pts = max(3, round(fs_eye * pupil_smooth_sec));
-        pL_sm   = movmean(eye.pupil_diameter_left,  win_pts, 'omitnan');
-        pR_sm   = movmean(eye.pupil_diameter_right, win_pts, 'omitnan');
 
-        plot(eye.t, eye.pupil_diameter_left,  'Color',[0.7 0.7 1.0], 'LineWidth',0.4, 'DisplayName','L raw');
-        plot(eye.t, eye.pupil_diameter_right, 'Color',[0.7 1.0 0.7], 'LineWidth',0.4, 'DisplayName','R raw');
-        plot(eye.t, pL_sm, 'b', 'LineWidth',1.4, 'DisplayName','L smooth');
-        plot(eye.t, pR_sm, 'Color',[0 0.6 0], 'LineWidth',1.4, 'DisplayName','R smooth');
+        % Blink removal on task signal before smoothing
+        pL_clean = remove_blinks_mad(eye.pupil_diameter_left,  fs_eye, ...
+            blink_threshold_mad, blink_interp_pad_ms);
+        pR_clean = remove_blinks_mad(eye.pupil_diameter_right, fs_eye, ...
+            blink_threshold_mad, blink_interp_pad_ms);
 
-        ylabel('Diameter (mm)');
-        title(sprintf('Pupil diameter  (%.2f s moving avg, %.0f Hz)', pupil_smooth_sec, fs_eye));
+        pL_sm = movmean(pL_clean, win_pts, 'omitnan');
+        pR_sm = movmean(pR_clean, win_pts, 'omitnan');
+
+        if has_baseline && isfinite(baseline.pupil_L_mean) && baseline.pupil_L_std > 0
+
+            % --- Z-score relative to resting state -----------------------
+            pL_norm = (pL_sm - baseline.pupil_L_mean) / baseline.pupil_L_std;
+            pR_norm = (pR_sm - baseline.pupil_R_mean) / baseline.pupil_R_std;
+
+            % --- Percent change from resting baseline --------------------
+            % Uncomment these two lines (and comment the z-score lines above)
+            % if you prefer % change:
+            % pL_norm = ((pL_sm - baseline.pupil_L_mean) / baseline.pupil_L_mean) * 100;
+            % pR_norm = ((pR_sm - baseline.pupil_R_mean) / baseline.pupil_R_mean) * 100;
+
+            plot(eye.t, pL_norm, 'b',               'LineWidth',1.4, 'DisplayName','L (z)');
+            plot(eye.t, pR_norm, 'Color',[0 0.6 0],  'LineWidth',1.4, 'DisplayName','R (z)');
+
+            % Reference lines at 0 ± 1 SD
+            yline(0, 'k--', 'LineWidth',0.8, 'HandleVisibility','off');
+            yline( 1, ':',  'Color',[0.5 0.5 0.5], 'LineWidth',0.6, 'HandleVisibility','off');
+            yline(-1, ':',  'Color',[0.5 0.5 0.5], 'LineWidth',0.6, 'HandleVisibility','off');
+
+            ylabel('Pupil (z-score vs rest)');
+            title(sprintf('Pupil  (blink-removed → z-scored vs rest  |  L µ=%.3f R µ=%.3f mm)', ...
+                baseline.pupil_L_mean, baseline.pupil_R_mean));
+        else
+            % No baseline: just plot smoothed mm
+            plot(eye.t, eye.pupil_diameter_left,  'Color',[0.7 0.7 1.0], 'LineWidth',0.4, 'DisplayName','L raw');
+            plot(eye.t, eye.pupil_diameter_right, 'Color',[0.7 1.0 0.7], 'LineWidth',0.4, 'DisplayName','R raw');
+            plot(eye.t, pL_sm, 'b',               'LineWidth',1.4,       'DisplayName','L smooth');
+            plot(eye.t, pR_sm, 'Color',[0 0.6 0],  'LineWidth',1.4,       'DisplayName','R smooth');
+            ylabel('Diameter (mm)');
+            title(sprintf('Pupil  (%.2f s moving avg, %.0f Hz)  [no baseline]', ...
+                pupil_smooth_sec, fs_eye));
+        end
+
         legend('Location','northeast','FontSize',7);
         grid on;
         add_event_lines(event_times);
-        mark_collisions_colored(all_collisions, collision_source);
+        
         mark_trial(t_trial_start, t_trial_end);
         xlabel('Time (s)');
     else
         xlabel(ax(row), 'Time (s)');
     end
 
-    % Link all time axes
     linkaxes(ax(1:row), 'x');
 
-    % Annotate event labels above the top panel
+    % Annotate event labels above top panel
     if ~isempty(event_times)
         axes(ax(1));
         yl = ylim;
@@ -1041,28 +847,129 @@ function plot_unified_overview(accel_raw, force_raw, force_mag_ds, t_ds, ...
         end
     end
 end
-
 %  UTILITY FUNCTIONS
+% ---- Blink removal via MAD thresholding + linear interpolation ----------
+function p_clean = remove_blinks_mad(p_raw, fs, k_mad, pad_ms)
+% Detects blinks as samples where pupil diameter drops far below the
+% robust floor (median - k*MAD). Pads the detected region by pad_ms on
+% each side, then linearly interpolates across the gap.
+%
+%   p_raw   : raw pupil diameter vector (NaNs / zeros allowed)
+%   fs      : sampling rate (Hz)
+%   k_mad   : threshold multiplier  (default 3.0)
+%   pad_ms  : padding in ms around each detected blink (default 100 ms)
 
+    p_clean  = double(p_raw);
+    pad_samp = round(pad_ms / 1000 * fs);
+
+    % ---- Robust statistics on valid (finite, positive) samples ----------
+    valid = isfinite(p_clean) & (p_clean > 0);
+    if sum(valid) < 10
+        return          % not enough data — return as-is
+    end
+
+    p_med     = median(p_clean(valid));
+    p_mad_val = mad(p_clean(valid), 1);
+
+    % Floor threshold: anything below this is flagged as a blink/artefact
+    floor_thresh = p_med - k_mad * p_mad_val;
+
+    % ---- Build bad-sample mask ------------------------------------------
+    % Bad = already NaN/zero  OR  below the floor threshold
+    bad = ~valid | (p_clean < floor_thresh);
+
+    % Morphological dilation: pad each bad region by pad_samp on each side
+    if pad_samp > 0
+        bad = imdilate(bad, ones(2*pad_samp + 1, 1));
+    end
+
+    % ---- Find contiguous bad segments -----------------------------------
+    d      = diff([0; bad(:); 0]);   % force column vector
+    starts = find(d ==  1);
+    ends   = find(d == -1) - 1;
+
+    % ---- Interpolate across each segment --------------------------------
+    for i = 1:numel(starts)
+        s = starts(i);
+        e = ends(i);
+
+        % Search outward for the nearest good anchor on each side
+        left_anchor  = s - 1;
+        right_anchor = e + 1;
+
+        % Walk left until we find a finite, non-bad sample
+        while left_anchor >= 1 && (bad(left_anchor) || ~isfinite(p_clean(left_anchor)))
+            left_anchor = left_anchor - 1;
+        end
+
+        % Walk right until we find a finite, non-bad sample
+        while right_anchor <= numel(p_clean) && (bad(right_anchor) || ~isfinite(p_clean(right_anchor)))
+            right_anchor = right_anchor + 1;
+        end
+
+        % ---- Decide what to do with this segment ------------------------
+        if left_anchor >= 1 && right_anchor <= numel(p_clean) && ...
+           isfinite(p_clean(left_anchor)) && isfinite(p_clean(right_anchor))
+
+            % Both anchors exist → linear interpolation
+            % We want to fill indices  left_anchor+1 : right_anchor-1
+            n_fill = right_anchor - left_anchor - 1;   % number of points to fill
+
+            if n_fill > 0
+                % linspace from anchor values, generate exactly n_fill interior pts
+                interp_vals = linspace(p_clean(left_anchor), ...
+                                       p_clean(right_anchor), ...
+                                       n_fill + 2);          % +2 includes the anchors
+                % Assign only the interior points (exclude first and last)
+                p_clean(left_anchor+1 : right_anchor-1) = interp_vals(2:end-1);
+            end
+            % n_fill == 0 means the two anchors are adjacent — nothing to fill
+
+        else
+            % At least one anchor is missing (segment at signal edge) → NaN
+            p_clean(s:e) = NaN;
+        end
+    end
+end
+% ---- Resting state pupil diagnostic plot --------------------------------
+function plot_resting_pupil(rest_eye, pL_clean, pR_clean, fs_eye, smooth_sec, subject_id, rest_idx)
+    t_rest = rest_eye.timestamp_unix_seconds - rest_eye.timestamp_unix_seconds(1);
+    win_pts = max(3, round(fs_eye * smooth_sec));
+
+    figure('Name', sprintf('RESTING STATE PUPIL — %s r%s', subject_id, rest_idx), ...
+           'Position', [100 100 1400 600]);
+    sgtitle(sprintf('Resting State Pupil  |  Subject %s  r%s  (%.0f Hz)', ...
+        subject_id, rest_idx, fs_eye), 'FontWeight','bold','FontSize',10);
+
+    subplot(2,1,1);  hold on;
+    plot(t_rest, rest_eye.pupil_diameter_left,  'Color',[0.8 0.8 0.8], 'LineWidth',0.5, ...
+         'DisplayName','L raw');
+    plot(t_rest, rest_eye.pupil_diameter_right, 'Color',[0.7 1.0 0.7], 'LineWidth',0.5, ...
+         'DisplayName','R raw');
+    plot(t_rest, pL_clean, 'b',               'LineWidth',1.2, 'DisplayName','L blink-removed');
+    plot(t_rest, pR_clean, 'Color',[0 0.6 0],  'LineWidth',1.2, 'DisplayName','R blink-removed');
+    ylabel('Diameter (mm)');
+    title('Raw vs blink-removed  (grey/green=raw, blue/dark-green=cleaned)');
+    legend('Location','best','FontSize',7);  grid on;
+
+    subplot(2,1,2);  hold on;
+    pL_sm = movmean(pL_clean, win_pts, 'omitnan');
+    pR_sm = movmean(pR_clean, win_pts, 'omitnan');
+    plot(t_rest, pL_sm, 'b',               'LineWidth',1.5, 'DisplayName', ...
+        sprintf('L smooth  µ=%.3f', mean(pL_sm,'omitnan')));
+    plot(t_rest, pR_sm, 'Color',[0 0.6 0],  'LineWidth',1.5, 'DisplayName', ...
+        sprintf('R smooth  µ=%.3f', mean(pR_sm,'omitnan')));
+    yline(mean(pL_sm,'omitnan'), 'b--', 'LineWidth',1, 'HandleVisibility','off');
+    yline(mean(pR_sm,'omitnan'), '--',  'Color',[0 0.6 0], 'LineWidth',1, 'HandleVisibility','off');
+    ylabel('Diameter (mm)');
+    xlabel('Time (s)');
+    title(sprintf('Smoothed (%.2f s)  — Dashed = mean (used as baseline)', smooth_sec));
+    legend('Location','best','FontSize',7);  grid on;
+end
 
 function add_event_lines(event_times)
     for i = 1:numel(event_times)
         xline(event_times(i),'k--','LineWidth',0.8,'HandleVisibility','off'); end
-end
-
-function mark_collisions(times)
-    for i = 1:numel(times)
-        xline(times(i),'r-','LineWidth',1,'HandleVisibility','off'); end
-end
-
-function mark_collisions_colored(times, sources)
-% Same as mark_collisions but colour-coded by source:
-%   Accel=blue  Force=magenta  Both=green
-    src_colors = {[0.2 0.4 0.9], [0.6 0.1 0.6], [0.1 0.6 0.1]};
-    for i = 1:numel(times)
-        col = src_colors{min(sources(i), 3)};
-        xline(times(i),'-','Color',col,'LineWidth',1.5,'HandleVisibility','off');
-    end
 end
 
 function mark_trial(t_start, t_end)
@@ -1146,73 +1053,6 @@ function [sig_ds, t_ds] = antialias_downsample(sig, t, fs_in, fs_out, order, ds_
         sig_ds(k) = mean(sig_filt(idx));  t_ds(k) = t(idx(1));
     end
 end
-
-function responses = analyze_gsr_cvxEDA(t_gsr, scr, scl, collision_times, ...
-        baseline_before, scr_window, scr_thresh, scl_start, scl_end, scl_thresh)
-    responses = init_responses(numel(collision_times));
-    for i = 1:numel(collision_times)
-        t0 = collision_times(i);
-        bl_mask = (t_gsr >= t0-baseline_before) & (t_gsr < t0);
-        if ~any(bl_mask), continue; end
-        baseline_scl = mean(scl(bl_mask));  responses(i).baseline = baseline_scl;
-        scr_mask = (t_gsr >= t0) & (t_gsr < t0+scr_window);
-        if any(scr_mask)
-            [pk,pi] = max(scr(scr_mask));  t_rel = t_gsr(scr_mask) - t0;
-            if pk > scr_thresh
-                responses(i).has_scr = true;  responses(i).scr_latency = t_rel(pi);
-                responses(i).scr_amplitude = pk; end
-        end
-        scl_mask = (t_gsr >= t0+scl_start) & (t_gsr < t0+scl_end);
-        if sum(scl_mask) > 3
-            chg = mean(scl(scl_mask)) - baseline_scl;
-            if abs(chg) > scl_thresh
-                responses(i).has_scl = true;  responses(i).scl_change = chg; end
-        end
-    end
-end
-
-function responses = analyze_gsr_raw(t_gsr, gsr_raw, collision_times, ...
-        baseline_before, scr_window, scr_thresh, scl_start, scl_end, scl_thresh)
-    responses = init_responses(numel(collision_times));
-    for i = 1:numel(collision_times)
-        t0 = collision_times(i);
-        bl_mask = (t_gsr >= t0-baseline_before) & (t_gsr < t0);
-        if ~any(bl_mask), continue; end
-        bl_mean = mean(gsr_raw(bl_mask));  responses(i).baseline = bl_mean;
-        scr_mask = (t_gsr >= t0) & (t_gsr < t0+scr_window);
-        if any(scr_mask)
-            seg = gsr_raw(scr_mask);  t_rel = t_gsr(scr_mask) - t0;
-            [mn,mi] = min(seg);  amp = bl_mean - mn;
-            if amp > scr_thresh
-                responses(i).has_scr = true;  responses(i).scr_latency = t_rel(mi);
-                responses(i).scr_amplitude = amp; end
-        end
-        scl_mask = (t_gsr >= t0+scl_start) & (t_gsr < t0+scl_end);
-        if sum(scl_mask) > 3
-            chg = bl_mean - mean(gsr_raw(scl_mask));
-            if abs(chg) > scl_thresh
-                responses(i).has_scl = true;  responses(i).scl_change = chg; end
-        end
-    end
-end
-
-function [scr_thresh, scl_thresh] = compute_gsr_thresholds_cvx(p_cvx, t_cvx, scr_sens, scl_sens)
-    abs_p = abs(p_cvx);
-    scr_thresh = max(median(abs_p) + scr_sens*mad(abs_p,1), 1e-4);
-    delta_scl  = abs(diff(t_cvx));
-    scl_thresh = max(median(delta_scl) + scl_sens*mad(delta_scl,1), 1e-4);
-end
-
-function [scr_thresh, scl_thresh] = compute_gsr_thresholds_raw(gsr_raw, scr_sens, scl_sens)
-    delta_fast = abs(diff(gsr_raw));
-    scr_thresh = max(median(delta_fast) + scr_sens*mad(delta_fast,1), 1.0);
-    gsr_smooth = movmean(gsr_raw, max(3,round(numel(gsr_raw)*0.01)));
-    delta_slow = abs(diff(gsr_smooth));
-    scl_thresh = max(median(delta_slow) + scl_sens*mad(delta_slow,1), 0.5);
-end
-
-
-
 
 function t_recon = reconstruct_timestamps_from_recording_time(recording_time, accel_fs)
 % Reconstruct per-sample timestamps when only recording_time (ROS batch clock)
