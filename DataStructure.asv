@@ -2,7 +2,11 @@ clear;clc;
 
 BASE_FOLDER = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
 
-participants = {'s02N'};%,'s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N','s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N','s42N','s43N','s44N','s46N','s48N','s03H','s04H','s06H','s08H','s10H','s12H','s13H','s17H','s19H','s21H','s23H','s25H','s26H','s29H','s31H','s33H','s35H','s38H','s40H','s41H','s45H','s47H'};
+%participants = {'s02N','s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N'};%
+%participants = {'s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N'};%,
+% participants = { 's42N','s43N','s44N','s46N','s48N','s03H','s04H','s06H','s08H','s10H'};%,
+participants = {'s12H','s13H','s17H','s19H','s21H','s23H','s25H','s26H','s29H','s31H'};
+%participants = {'s33H','s35H','s38H','s40H','s41H','s45H','s47H'};
  
 target_fs = 500;
 accel_fs = 3000;
@@ -87,8 +91,7 @@ for s = 1:length(participants)
 
             lev_path = fullfile(lev_folders(l).folder, lev_folders(l).name);
 
-            trial = build_trial(lev_path, accel_fs, target_fs, V2G, n_baseline_offset, safe_interp);
-
+            trial = build_trial(lev_path);
             if isempty(trial)
                 continue
             end
@@ -110,7 +113,7 @@ for s = 1:length(participants)
             continue
         end
 
-        trial = build_trial(rep_path);
+        trial = build_trial(section_path);
 
         if isempty(trial)
             continue
@@ -136,15 +139,14 @@ for s = 1:length(participants)
             rep_folders = dir(fullfile(lev_path,'rep_*'));
             rep_folders = rep_folders([rep_folders.isdir]);
             rep_folders = rep_folders(~contains({rep_folders.name},'_X'));
-            
+
             DATA_TRAINING.subjects(s).lev(l).lev = l;
 
             for r = 1:length(rep_folders)
 
                 rep_path = fullfile(rep_folders(r).folder, rep_folders(r).name);
 
-                trial = build_trial(rep_path, accel_fs, target_fs, V2G, n_baseline_offset, safe_interp);
-
+                trial = build_trial(rep_path);
                 if isempty(trial)
                     continue
                 end
@@ -158,10 +160,10 @@ for s = 1:length(participants)
     end
 end
 
-% save('DATA_BASELINE.mat','DATA_BASELINE','-v7.3');
-% save('DATA_TEST.mat','DATA_TEST','-v7.3');
-save('DATA_REST.mat','DATA_REST','-v7.3');
-save('DATA_TRAINING.mat','DATA_TRAINING','-v7.3');
+save('DATA_BASELINE_2131.mat','DATA_BASELINE','-v7.3');
+save('DATA_TEST_47.mat','DATA_TEST','-v7.3');
+save('DATA_REST_47.mat','DATA_REST','-v7.3');
+save('DATA_TRAINING_47.mat','DATA_TRAINING','-v7.3');
 
 fprintf('\nDONE\n');
 
@@ -192,15 +194,54 @@ function trial = build_trial(trial_path)
     trial = struct();
 
     % Accelerometers / Force
-    trial.acc.time = accel.recording_time;
+    trial.nidaq.time = accel.recording_time;
 
-    acc_vars = intersect( ...
-        {'ai9','ai10','ai11','ai12','ai13','ai14'}, ...
-        accel.Properties.VariableNames, ...
-        'stable');
-
-    trial.acc.data = accel{:,acc_vars};
-
+    nidaq_vars = accel.Properties.VariableNames;
+    nidaq_vars(strcmp(nidaq_vars,'recording_time')) = [];
+    
+    trial.nidaq.labels = nidaq_vars;
+    trial.nidaq.data = accel{:,nidaq_vars};
+    
+    if all(ismember({'ai9','ai10','ai11','ai12','ai13','ai14'},accel.Properties.VariableNames))
+    
+        trial.acc.time = accel.recording_time;
+    
+        trial.acc.labels = {'xL','yL','zL','xR','yR','zR'};
+    
+        trial.acc.data = [ ...
+            accel.ai9 ...
+            accel.ai10 ...
+            accel.ai11 ...
+            accel.ai12 ...
+            accel.ai13 ...
+            accel.ai14 ];
+    
+    else
+    
+        trial.acc = [];
+    
+    end
+    
+    force_ch = {'ai7','ai15','ai16','ai24','ai17','ai25', 'ai18','ai26','ai19','ai27','ai20','ai28'};
+    
+    if all(ismember(force_ch, accel.Properties.VariableNames))
+    
+        trial.force.time = accel.recording_time;
+    
+        trial.force.labels = {'F1','F2','F3','F4','F5','F6'};
+    
+        trial.force.data = [accel.ai7  - accel.ai15 ...
+            accel.ai16 - accel.ai24 ...
+            accel.ai17 - accel.ai25 ...
+            accel.ai18 - accel.ai26 ...
+            accel.ai19 - accel.ai27 ...
+            accel.ai20 - accel.ai28 ];
+    
+    else
+    
+        trial.force = [];
+    
+    end
     % Audio
     trial.audio = [];
 
@@ -280,6 +321,7 @@ function trial = build_trial(trial_path)
     trial.path = trial_path;
 
 end
+
 function [t_start, t_end] = parse_trial_window(events)
 
     t_start = NaN;

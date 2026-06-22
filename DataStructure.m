@@ -1,12 +1,12 @@
 clear;clc;
 
-BASE_FOLDER = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
+BASE_FOLDER = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';
 
 %participants = {'s02N','s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N'};%
 %participants = {'s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N'};%,
 % participants = { 's42N','s43N','s44N','s46N','s48N','s03H','s04H','s06H','s08H','s10H'};%,
-%participants = {'s12H','s13H','s17H','s19H','s21H','s23H','s25H','s26H','s29H','s31H'};
-participants = {'s33H','s35H','s38H','s40H','s41H','s45H','s47H'};
+participants = {'s12H','s13H','s17H','s19H','s21H','s23H','s25H','s26H','s29H','s31H'};
+%participants = {'s33H','s35H','s38H','s40H','s41H','s45H','s47H'};
  
 target_fs = 500;
 accel_fs = 3000;
@@ -160,10 +160,10 @@ for s = 1:length(participants)
     end
 end
 
-save('DATA_BASELINE_47.mat','DATA_BASELINE','-v7.3');
-save('DATA_TEST_47.mat','DATA_TEST','-v7.3');
-save('DATA_REST_47.mat','DATA_REST','-v7.3');
-save('DATA_TRAINING_47.mat','DATA_TRAINING','-v7.3');
+save('DATA_BASELINE_2131.mat','DATA_BASELINE','-v7.3');
+save('DATA_TEST_2131.mat','DATA_TEST','-v7.3');
+save('DATA_REST_2131.mat','DATA_REST','-v7.3');
+save('DATA_TRAINING_2131.mat','DATA_TRAINING','-v7.3');
 
 fprintf('\nDONE\n');
 
