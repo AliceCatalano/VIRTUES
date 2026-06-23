@@ -1,6 +1,6 @@
 clear;clc;
 
-BASE_FOLDER = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';
+BASE_FOLDER = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
 
 %participants = {'s02N','s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N'};%
 %participants = {'s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N'};%,

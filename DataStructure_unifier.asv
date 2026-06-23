@@ -80,7 +80,8 @@ for d = 1:numel(data_types)
         handle_duplicate_index(id_list, file_idx_list, arr_idx_list, duplicate_policy);
 
     % Sort by subject ID
-    [id_list, file_idx_list, arr_idx_list] = sort_index_by_id(id_list, file_idx_list, arr_idx_list);
+    [id_list, file_idx_list, arr_idx_list] = ...
+        sort_index_by_id(id_list, file_idx_list, arr_idx_list);
 
     fprintf('  Subjects after dedup + sort: %d\n', numel(id_list));
 
@@ -471,27 +472,29 @@ end
 % end
 
 
-function [ids, file_idx, arr_idx] = sort_index_by_id(ids, file_idx, arr_idx)
+function S = sort_subjects_by_id(S)
 
-    if isempty(ids)
+    if isempty(S) || ~isfield(S, 'id')
         return
     end
 
-    nums = nan(numel(ids), 1);
+    ids = {S.id};
+    subj_nums = nan(numel(ids), 1);
 
     for i = 1:numel(ids)
-        tok = regexp(ids{i}, '^s(\d+)', 'tokens', 'once');
-        if ~isempty(tok)
-            nums(i) = str2double(tok{1});
+
+        token = regexp(ids{i}, '^s(\d+)', 'tokens', 'once');
+
+        if ~isempty(token)
+            subj_nums(i) = str2double(token{1});
         else
-            nums(i) = inf;
+            subj_nums(i) = inf;
         end
+
     end
 
-    [~, order] = sort(nums);
-    ids      = ids(order);
-    file_idx = file_idx(order);
-    arr_idx  = arr_idx(order);
+    [~, order] = sort(subj_nums);
+    S = S(order);
 
 end
 
@@ -501,65 +504,20 @@ function files_sorted = sort_files_by_suffix(files, varname)
     nums = nan(numel(files), 1);
 
     for i = 1:numel(files)
-        expr  = ['^' regexptranslate('escape', varname) '_(\d+)\.mat$'];
+
+        % Example: DATA_BASELINE_47.mat -> 47
+        expr = ['^' regexptranslate('escape', varname) '_(\d+)\.mat$'];
         token = regexp(files(i).name, expr, 'tokens', 'once');
+
         if ~isempty(token)
             nums(i) = str2double(token{1});
         else
             nums(i) = inf;
         end
+
     end
 
     [~, order] = sort(nums);
     files_sorted = files(order);
 
 end
-% function S = sort_subjects_by_id(S)
-% 
-%     if isempty(S) || ~isfield(S, 'id')
-%         return
-%     end
-% 
-%     ids = {S.id};
-%     subj_nums = nan(numel(ids), 1);
-% 
-%     for i = 1:numel(ids)
-% 
-%         token = regexp(ids{i}, '^s(\d+)', 'tokens', 'once');
-% 
-%         if ~isempty(token)
-%             subj_nums(i) = str2double(token{1});
-%         else
-%             subj_nums(i) = inf;
-%         end
-% 
-%     end
-% 
-%     [~, order] = sort(subj_nums);
-%     S = S(order);
-% 
-% end
-% 
-
-% % function files_sorted = sort_files_by_suffix(files, varname)
-% 
-%     nums = nan(numel(files), 1);
-% 
-%     for i = 1:numel(files)
-% 
-%         % Example: DATA_BASELINE_47.mat -> 47
-%         expr = ['^' regexptranslate('escape', varname) '_(\d+)\.mat$'];
-%         token = regexp(files(i).name, expr, 'tokens', 'once');
-% 
-%         if ~isempty(token)
-%             nums(i) = str2double(token{1});
-%         else
-%             nums(i) = inf;
-%         end
-% 
-%     end
-% 
-%     [~, order] = sort(nums);
-%     files_sorted = files(order);
-% 
-% end
