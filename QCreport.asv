@@ -1,0 +1,324 @@
+%% QC_report_all_subjects.m
+% Runs data quality assessment for all subjects and produces:
+% 1. A per-subject text report in the command window
+% 2. A summary table saved as CSV
+% 3. A heatmap figure showing data quality across all subjects/sessions
+
+clear; clc; close all;
+
+cfg = config();
+
+% Dead signal thresholds — adjust if needed
+DEAD_GSR_MEAN_MAX  = 0.005;   % below this = dead signal
+DEAD_GSR_STD_MAX   = 0.002;   % below this = dead signal
+ARTIFACT_AMP_MIN   = 0.8;     % above this = likely artifact (normalized)
+
+% Sessions to check
+training_levels = {'levelL1','levelL2','levelL3','levelL4','levelL5'};
+n_reps          = 10;
+
+% Output
+report_dir = fullfile(cfg.output_root, 'QC_reports');
+if ~exist(report_dir, 'dir'), mkdir(report_dir); end
+
+% Preallocate summary table rows
+summary_rows = {};
+
+%% =========================================================
+%  MAIN LOOP
+% =========================================================
+for si = 1:numel(cfg.all_subjects)
+    subj = cfg.all_subjects{si};
+    mat_path = fullfile(cfg.output_root, sprintf('%s_L1_features.mat', subj));
+
+    if ~isfile(mat_path)
+        fprintf('\n[MISSING] %s — no .mat file found, skipping\n', subj);
+        continue;
+    end
+
+    data    = load(mat_path);
+    results = data.results;
+    feats   = results.features;
+
+    fprintf('\n');
+    fprintf('============================================================\n');
+    fprintf('  Subject: %s   Group: %s\n', subj, results.group);
+    fprintf('============================================================\n');
+
+    % ---- helper: assess one feature struct ----
+    % Returns 'good', 'dead', 'artifact', 'marginal'
+
+
+    % ---- Baseline 1 ----
+    fprintf('\n  --- Baseline1 ---\n');
+    for li = 1:5
+        lv = sprintf('Level%d', li);
+        if isfield(feats, 'Baseline1') && isfield(feats.Baseline1, lv)
+            st = assess_feat(feats.Baseline1.(lv), DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN);
+            f  = feats.Baseline1.(lv);
+            fprintf('    L%d: %-8s  gsr_mean=%.4f  gsr_std=%.4f  scr_peaks=%d  scr_amp=%.4f\n', ...
+                li, st, f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp);
+            summary_rows{end+1} = {subj, results.group, 'Baseline1', lv, st, ...
+                f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp, f.scl_mean, f.scl_slope};
+        else
+            fprintf('    L%d: MISSING\n', li);
+            summary_rows{end+1} = {subj, results.group, 'Baseline1', lv, 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+        end
+    end
+
+    % ---- Baseline 2 ----
+    fprintf('\n  --- Baseline2 ---\n');
+    for li = 1:5
+        lv = sprintf('Level%d', li);
+        if isfield(feats, 'Baseline2') && isfield(feats.Baseline2, lv)
+            st = assess_feat(feats.Baseline2.(lv), DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN);
+            f  = feats.Baseline2.(lv);
+            fprintf('    L%d: %-8s  gsr_mean=%.4f  gsr_std=%.4f  scr_peaks=%d  scr_amp=%.4f\n', ...
+                li, st, f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp);
+            summary_rows{end+1} = {subj, results.group, 'Baseline2', lv, st, ...
+                f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp, f.scl_mean, f.scl_slope};
+        else
+            fprintf('    L%d: MISSING\n', li);
+            summary_rows{end+1} = {subj, results.group, 'Baseline2', lv, 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+        end
+    end
+
+    % ---- Training levels ----
+    for ti = 1:numel(training_levels)
+        lv_key = strrep(training_levels{ti}, '_', '');
+        fprintf('\n  --- Training %s ---\n', lv_key);
+        if ~isfield(feats, lv_key)
+            fprintf('    MISSING\n');
+            for r = 1:n_reps
+                summary_rows{end+1} = {subj, results.group, lv_key, sprintf('rep%02d',r), 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+            end
+            continue;
+        end
+        for r = 1:n_reps
+            rk = sprintf('rep%02d', r);
+            if isfield(feats.(lv_key), rk)
+                st = assess_feat(feats.(lv_key).(rk), DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN);
+                f  = feats.(lv_key).(rk);
+                fprintf('    rep%02d: %-8s  gsr_mean=%.4f  gsr_std=%.4f  scr_peaks=%d  scr_amp=%.4f\n', ...
+                    r, st, f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp);
+                summary_rows{end+1} = {subj, results.group, lv_key, rk, st, ...
+                    f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp, f.scl_mean, f.scl_slope};
+            else
+                fprintf('    rep%02d: MISSING\n', r);
+                summary_rows{end+1} = {subj, results.group, lv_key, rk, 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+            end
+        end
+    end
+
+    % ---- Test phases ----
+    fprintf('\n  --- Test phases ---\n');
+    for tp = {'Test1', 'Test2'}
+        ph = tp{1};
+        if isfield(feats, ph) && isfield(feats.(ph), 'full_session')
+            st = assess_feat(feats.(ph).full_session, DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN);
+            f  = feats.(ph).full_session;
+            fprintf('    %s: %-8s  gsr_mean=%.4f  gsr_std=%.4f  scr_peaks=%d  scr_amp=%.4f\n', ...
+                ph, st, f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp);
+            summary_rows{end+1} = {subj, results.group, ph, 'full_session', st, ...
+                f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp, f.scl_mean, f.scl_slope};
+        else
+            fprintf('    %s: MISSING\n', ph);
+            summary_rows{end+1} = {subj, results.group, ph, 'full_session', 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+        end
+    end
+
+    % ---- Resting state ----
+    fprintf('\n  --- Resting state ---\n');
+    for r = 1:2
+        rk = sprintf('r%d', r);
+        if isfield(feats, 'resting') && isfield(feats.resting, rk)
+            st = assess_feat(feats.resting.(rk), DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN);
+            f  = feats.resting.(rk);
+            fprintf('    %s: %-8s  gsr_mean=%.4f  gsr_std=%.4f  scr_peaks=%d  scr_amp=%.4f\n', ...
+                rk, st, f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp);
+            summary_rows{end+1} = {subj, results.group, 'resting', rk, st, ...
+                f.gsr_mean, f.gsr_std, f.scr_n_peaks, f.scr_mean_amp, f.scl_mean, f.scl_slope};
+        else
+            fprintf('    %s: MISSING\n', rk);
+            summary_rows{end+1} = {subj, results.group, 'resting', rk, 'missing', NaN, NaN, NaN, NaN, NaN, NaN};
+        end
+    end
+
+    % ---- Per-subject quality summary ----
+    subj_rows = summary_rows(cellfun(@(x) strcmp(x{1}, subj), summary_rows));
+    statuses  = cellfun(@(x) x{5}, subj_rows, 'UniformOutput', false);
+    n_good     = sum(strcmp(statuses, 'good'));
+    n_dead     = sum(strcmp(statuses, 'dead'));
+    n_artifact = sum(strcmp(statuses, 'artifact'));
+    n_marginal = sum(strcmp(statuses, 'marginal'));
+    n_missing  = sum(strcmp(statuses, 'missing'));
+    n_total    = numel(statuses);
+
+    fprintf('\n  QUALITY SUMMARY: good=%d  marginal=%d  artifact=%d  dead=%d  missing=%d  (total=%d  usable=%.0f%%)\n', ...
+        n_good, n_marginal, n_artifact, n_dead, n_missing, n_total, ...
+        100*(n_good+n_marginal)/n_total);
+end
+
+%% =========================================================
+%  SAVE SUMMARY TABLE AS CSV
+% =========================================================
+if ~isempty(summary_rows)
+    n_cols = cellfun(@numel, summary_rows);
+    if any(n_cols ~= 11)
+        fprintf('WARNING: %d rows have wrong number of columns:\n', sum(n_cols ~= 11));
+        bad_idx = find(n_cols ~= 11);
+        for bi = 1:numel(bad_idx)
+            fprintf('  row %d has %d cols: %s / %s\n', bad_idx(bi), n_cols(bad_idx(bi)), ...
+                summary_rows{bad_idx(bi)}{1}, summary_rows{bad_idx(bi)}{2});
+        end
+        % Pad or trim to 11 columns
+        for bi = 1:numel(bad_idx)
+            row = summary_rows{bad_idx(bi)};
+            if numel(row) < 11
+                row(end+1:11) = {NaN};
+            else
+                row = row(1:11);
+            end
+            summary_rows{bad_idx(bi)} = row;
+        end
+    end
+
+    % Now build table row by row to be safe
+    n_rows = numel(summary_rows);
+    subject     = cell(n_rows,1);
+    group       = cell(n_rows,1);
+    phase       = cell(n_rows,1);
+    session     = cell(n_rows,1);
+    status      = cell(n_rows,1);
+    gsr_mean    = NaN(n_rows,1);
+    gsr_std     = NaN(n_rows,1);
+    scr_n_peaks = NaN(n_rows,1);
+    scr_mean_amp= NaN(n_rows,1);
+    scl_mean    = NaN(n_rows,1);
+    scl_slope   = NaN(n_rows,1);
+
+    for ri = 1:n_rows
+        row = summary_rows{ri};
+        subject{ri}      = row{1};
+        group{ri}        = row{2};
+        phase{ri}        = row{3};
+        session{ri}      = row{4};
+        status{ri}       = row{5};
+        if isnumeric(row{6}),  gsr_mean(ri)    = row{6}; end
+        if isnumeric(row{7}),  gsr_std(ri)     = row{7}; end
+        if isnumeric(row{8}),  scr_n_peaks(ri) = row{8}; end
+        if isnumeric(row{9}),  scr_mean_amp(ri)= row{9}; end
+        if isnumeric(row{10}), scl_mean(ri)    = row{10}; end
+        if isnumeric(row{11}), scl_slope(ri)   = row{11}; end
+    end
+
+    T = table(subject, group, phase, session, status, ...
+        gsr_mean, gsr_std, scr_n_peaks, scr_mean_amp, scl_mean, scl_slope);
+
+    csv_path = fullfile(report_dir, 'QC_summary_all_subjects.csv');
+    writetable(T, csv_path);
+    fprintf('\nQC table saved → %s\n', csv_path);
+    %% =========================================================
+    %  HEATMAP: data quality across subjects x sessions
+    % =========================================================
+    % Encode status as number for colour mapping
+    status_map = containers.Map({'good','marginal','artifact','dead','missing'}, {4, 3, 2, 1, 0});
+
+    % Build session list (columns)
+    session_labels = {};
+    for li = 1:5, session_labels{end+1} = sprintf('B1_L%d',li); end
+    for li = 1:5, session_labels{end+1} = sprintf('B2_L%d',li); end
+    for ti = 1:5
+        for r = 1:n_reps
+            session_labels{end+1} = sprintf('L%d_r%02d', ti, r);
+        end
+    end
+    session_labels{end+1} = 'Test1';
+    session_labels{end+1} = 'Test2';
+    session_labels{end+1} = 'rest_r1';
+    session_labels{end+1} = 'rest_r2';
+
+    subj_list = cfg.all_subjects;
+    n_subj    = numel(subj_list);
+    n_sess    = numel(session_labels);
+    heat_mat  = zeros(n_subj, n_sess);
+
+    for si = 1:n_subj
+        subj = subj_list{si};
+        subj_rows = T(strcmp(T.subject, subj), :);
+        for col = 1:n_sess
+            lbl   = session_labels{col};
+            parts = strsplit(lbl, '_');
+
+            % Match phase and session key
+            if startsWith(lbl, 'B1')
+                ph = 'Baseline1'; sk = sprintf('Level%s', parts{2}(2));
+            elseif startsWith(lbl, 'B2')
+                ph = 'Baseline2'; sk = sprintf('Level%s', parts{2}(2));
+            elseif startsWith(lbl, 'L') && contains(lbl, '_r')
+                ph = sprintf('levelL%s', parts{1}(2)); sk = parts{2};
+            elseif startsWith(lbl, 'Test')
+                ph = lbl; sk = 'full_session';
+            elseif startsWith(lbl, 'rest')
+                ph = 'resting'; sk = parts{2};
+            else
+                continue;
+            end
+
+            row = subj_rows(strcmp(subj_rows.phase, ph) & strcmp(subj_rows.session, sk), :);
+            if isempty(row)
+                heat_mat(si, col) = 0;
+            else
+                st = row.status{1};
+                if isKey(status_map, st)
+                    heat_mat(si, col) = status_map(st);
+                else
+                    heat_mat(si, col) = 0;
+                end
+            end
+        end
+    end
+
+    % Plot heatmap
+    figure('Position', [0 0 min(n_sess*18, 2400), max(n_subj*20, 400)]);
+    imagesc(heat_mat);
+    colormap([0.6 0.6 0.6;   % 0 = missing  (grey)
+        0.9 0.2 0.2;   % 1 = dead     (red)
+        1.0 0.6 0.1;   % 2 = artifact (orange)
+        1.0 0.95 0.3;  % 3 = marginal (yellow)
+        0.2 0.75 0.2]);% 4 = good     (green)
+    clim([0 4]);
+
+    set(gca, 'XTick', 1:n_sess, 'XTickLabel', session_labels, ...
+        'XTickLabelRotation', 90, 'FontSize', 7);
+    set(gca, 'YTick', 1:n_subj, 'YTickLabel', subj_list, 'FontSize', 8);
+    xlabel('Session'); ylabel('Subject');
+    title('Data Quality Heatmap — green=good  yellow=marginal  orange=artifact  red=dead  grey=missing');
+
+    % Colorbar with labels
+    cb = colorbar;
+    cb.Ticks = [0.4 1.2 2.0 2.8 3.6];
+    cb.TickLabels = {'missing','dead','artifact','marginal','good'};
+
+    saveas(gcf, fullfile(report_dir, 'QC_heatmap_all_subjects.png'));
+    fprintf('Heatmap saved → %s\n', fullfile(report_dir, 'QC_heatmap_all_subjects.png'));
+end
+
+fprintf('\n=== QC COMPLETE ===\n');
+function status = assess_feat(feat, DEAD_GSR_MEAN_MAX, DEAD_GSR_STD_MAX, ARTIFACT_AMP_MIN)
+if ~isstruct(feat) || ~isfield(feat, 'gsr_mean')
+    status = 'missing'; return;
+end
+gm = feat.gsr_mean;
+gs = feat.gsr_std;
+sa = feat.scr_mean_amp;
+if gm < DEAD_GSR_MEAN_MAX && gs < DEAD_GSR_STD_MAX
+    status = 'dead';
+elseif sa >= ARTIFACT_AMP_MIN && feat.scr_n_peaks <= 2
+    status = 'artifact';
+elseif gm < DEAD_GSR_MEAN_MAX * 5 || gs < DEAD_GSR_STD_MAX * 5
+    status = 'marginal';
+else
+    status = 'good';
+end
+end

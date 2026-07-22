@@ -5,7 +5,7 @@
 
 clear; clc; close all;
 
-session_folder = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano/subject_s01H/level_L3/rep_05';
+session_folder = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano/subject_s01H/Baseline1/Level5';
 %session_folder = replace(session_folder, '~', getenv('HOME'));
 
 accel_fs = 3000;   % Hz
@@ -24,12 +24,12 @@ fprintf('Loaded accel.csv: %d rows\n', height(nidaq));
 
 % ── Build tables ─────────────────────────────────────────────────────────────
 accel        = table();
-accel.xL     = nidaq.ai1;
-accel.yL     = nidaq.ai2;
-accel.zL     = nidaq.ai3;
-accel.xR     = nidaq.ai4;
-accel.yR     = nidaq.ai5;
-accel.zR     = nidaq.ai6;
+accel.xL     = nidaq.ai9;
+accel.yL     = nidaq.ai10;
+accel.zL     = nidaq.ai11;
+accel.xR     = nidaq.ai12;
+accel.yR     = nidaq.ai13;
+accel.zR     = nidaq.ai14;
 accel.t_pc   = nidaq.pc_time;
 %%
 force        = table();
@@ -68,7 +68,7 @@ if n_gaps > 0
     fprintf('  Largest gap: %.4f s at t=%.3f s\n', max(dt_check(gap_pos)), accel.t(gap_pos(1)));
 end
 
-% ── Events ───────────────────────────────────────────────────────────────────
+%% ── Events ───────────────────────────────────────────────────────────────────
 event_times = [];
 if isfile(events_file)
     events = readtable(events_file);
@@ -78,9 +78,7 @@ if isfile(events_file)
         fprintf('Loaded %d events\n', numel(event_times));
     end
 end
-% ── Bandpassed panels ────────────────────────────────────────────────────────
-plot_accel_6panel(accel.t, accel.xL, accel.yL, accel.zL, event_times, accel_fs, bp_lo, bp_hi, 'Left sensor');
-plot_accel_6panel(accel.t, accel.xR, accel.yR, accel.zR, event_times, accel_fs, bp_lo, bp_hi, 'Right sensor');
+
 %% ── Force total ──────────────────────────────────────────────────────────────
 force_cols  = {'F1','F2','F3','F4','F5','F6'};
 force.total = zeros(height(force), 1);
@@ -108,7 +106,9 @@ linkaxes(ax_raw,'x');
 xlabel(ax_raw(6),'Time (s)');
 sgtitle('Raw Accelerometer — All 6 Axes','FontWeight','bold');
 
-
+%% ── Bandpassed panels ────────────────────────────────────────────────────────
+plot_accel_6panel(accel.t, accel.xL, accel.yL, accel.zL, event_times, accel_fs, bp_lo, bp_hi, 'Left sensor');
+plot_accel_6panel(accel.t, accel.xR, accel.yR, accel.zR, event_times, accel_fs, bp_lo, bp_hi, 'Right sensor');
 
 %% ── Force channels ───────────────────────────────────────────────────────────
 f_colors = lines(6);

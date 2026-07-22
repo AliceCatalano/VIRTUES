@@ -7,8 +7,8 @@ clear; clc;
 
 %  CONFIGURATION
 
-BASE_FOLDER = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';
-SAVE_PATH   = '/home/acatalano/Desktop/Virtues';
+BASE_FOLDER = '/home/acatalano/Desktop/VIRTUES';
+SAVE_PATH   = '/home/acatalano/Desktop/Virtues_data';
 
 
 % NI-DAQ
@@ -218,6 +218,7 @@ for fi = 1:numel(folders_to_run)
     if ~isempty(audio)
         audio_present_ch = intersect(audio_channels, audio.Properties.VariableNames);
         has_audio = ~isempty(audio_present_ch);
+        
         if ~has_audio
             fprintf('  audio.csv found but no recognised mixer channels.\n');
         end

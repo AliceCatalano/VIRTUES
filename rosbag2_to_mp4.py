@@ -142,7 +142,7 @@ def main():
         level_num = level_folder.replace("Level", "")              # e.g. "1"
 
         out_name = f"video_Level{level_num}.mp4"
-        out_path = os.path.join(os.path.dirname(bag_dir), out_name)
+        out_path = '/home/acatalano/Desktop/Virtues_Data/videos'
 
         rel = os.path.relpath(bag_dir, BASE_DIR)
         print(f"[{rel}]")

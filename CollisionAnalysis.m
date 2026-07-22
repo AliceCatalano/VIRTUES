@@ -1,237 +1,505 @@
-%% CollisionInspector — single acquisition
-% Edit SECTION 1, run the script, inspect the figure, confirm to save.
+%% CollisionDetection_Local.m
+%  Fully automatic collision detection across ALL phases of one SUBJECT,
+%  using a FIXED, validated detection threshold. No plots, no prompts —
+%  every acquisition is auto-detected and auto-saved.
+%
+%  At the end of each phase, a DATA QUALITY REPORT is printed summarizing:
+%    - collision counts per repetition (min/max/mean/std, which rep)
+%    - which repetitions fall outside the "trusted" count range (FYI only)
+%    - collision intensity (accel-g and audio) statistics
+%    - the single strongest / weakest collision in the whole phase
+%
+%  A final report across all phases is printed at the very end.
+%
+%  WORKFLOW:
+%    1. Enter SUBJECT.
+%    2. Script loops through every known phase automatically.
+%    3. For each phase, loops through every acquisition automatically.
+%    4. Nothing is shown/asked — everything is saved directly.
+%    5. Quality report printed after each phase + one grand summary at the end.
 
-%% SECTION 1 — TARGET & PARAMETERS
-BASE_FOLDER          = '/run/user/1002/gvfs/smb-share:server=shark,share=acatalano';
-SUBJECT              = 's01H';      % e.g. 's07N', 's03H'
-PHASE                = 'level_L3';  % 'Baseline1','Baseline2','Test1','Test2','level_L1'…'level_L5'
-ACQUISITION          = 'rep_03';    % 'rep_01'…'rep_10' for level phases; 'Level1'…'Level5' for Baseline
+clear; clc; close all;
 
-ACCEL_FS             = 3000;        % NI-DAQ sampling rate (Hz)
-N_BASELINE_OFFSET    = 50;          % samples for zero-mean baseline
-V2G                  = 1 / 0.4;    % V → g
-BP_LOW               = 80;          % NI-DAQ bandpass low (Hz) — plot only
-BP_HIGH              = 1000;        % NI-DAQ bandpass high (Hz) — plot only
-TARGET_FS            = 500;         % downsample target for NI-DAQ display (Hz)
+%% SECTION 1 — FIXED PARAMETERS
+BASE_FOLDER   = '~/Desktop/Virtues_Data';
 
-AUDIO_BP_LOW         = 80;
-AUDIO_BP_HIGH        = 1000;draw_collisions
-AUDIO_RMS_WIN_SEC    = 0.02;        % RMS envelope window (s)
-PEAK_MIN_DIST_SEC    = 2.0;         % MinPeakDistance for findpeaks (s)
-PEAK_HEIGHT_FACTOR   = 2.0;         % MinPeakHeight = FACTOR * mean(env) — ↑ = stricter
+TARGET_FS            = 500;        % Hz — accelerometer processing rate (not used for plotting anymore)
+AUDIO_BP_LOW         = 80;         % Hz
+AUDIO_BP_HIGH        = 1000;       % Hz
+AUDIO_RMS_WIN_SEC    = 0.02;       % RMS envelope window (s)
+PEAK_MIN_DIST_SEC    = 1;          % minimum gap between detections (s)
 
-INTENSITY_WIN_SEC    = 0.10;        % ±half-window around collision for peak-g readout
-YLIM_ACCEL           = [0 15];      % [] for auto
-YLIM_AUDIO           = [];
-SHOW_RAW_CH          = true;        % show individual NI-DAQ X/Y/Z axes
+% Validated fixed threshold (kept for reference/report; adaptive one used below)
+FIXED_AUDIO_THRESHOLD = 0.2;
 
-%% SECTION 2 — PATH RESOLUTION
-subj_folder = fullfile(BASE_FOLDER, ['subject_' SUBJECT]);
-acq_folder  = fullfile(subj_folder, PHASE, ACQUISITION);
-if ~isfolder(acq_folder)
-    if isfolder([acq_folder '_R']), acq_folder = [acq_folder '_R'];
-    else, error('Folder not found: %s', acq_folder); end
-end
-accel_file  = fullfile(acq_folder, 'accel.csv');
-audio_file  = fullfile(acq_folder, 'audio.csv');
-events_file = fullfile(acq_folder, 'events.csv');
-assert(isfile(accel_file),  'Missing: %s', accel_file);
-assert(isfile(events_file), 'Missing: %s', events_file);
-assert(isfile(audio_file),  'Missing audio.csv — cannot detect collisions: %s', audio_file);
-fprintf('\n%s | %s | %s\n%s\n\n', SUBJECT, PHASE, ACQUISITION, acq_folder);
+% Range used ONLY for flagging in the report — does not stop processing
+REVIEW_LOW_N  = 2;
+REVIEW_HIGH_N = 10;
 
-%% SECTION 3 — LOAD & ALIGN
-nidaq  = readtable(accel_file);
-events = readtable(events_file);
-audio  = readtable(audio_file);
+INTENSITY_WIN_SEC    = 0.10;       % ± half-window around each collision (s)
 
-% Reconstruct monotonic NI-DAQ clock
-raw_t = nidaq.recording_time;  n = height(nidaq);
-anch  = [1; find(diff(raw_t) ~= 0) + 1];  at = raw_t(anch);
-t_nidaq = zeros(n,1);
-for a = 1:numel(anch)
-    i0 = anch(a);
-    if a < numel(anch)
-        i1 = anch(a+1)-1; np = i1-i0+1;
-        t_nidaq(i0:i1) = at(a) + (0:np-1)' * (at(a+1)-at(a)) / np;
-    else
-        t_nidaq(i0:n) = at(a) + (0:n-i0)' / ACCEL_FS;
+%% SECTION 2 — ASK USER FOR SUBJECT ONLY
+base = expanduser(BASE_FOLDER);
+SUBJECTS_TO_RUN = {'subject_s33H','subject_s35H','subject_s34N','subject_s37N','subject_s36N','subject_s38H'};
+
+for subjIdx = 1:numel(SUBJECTS_TO_RUN)
+
+    subjFolderName = SUBJECTS_TO_RUN{subjIdx};      % e.g. 'subject_s32N'
+    SUBJECT = erase(subjFolderName, 'subject_');     % e.g. 's32N'  (used for filenames/labels)
+
+    subj_folder = fullfile(base, subjFolderName);
+    report_file = fullfile(subj_folder, sprintf('CollisionReport_%s.txt', SUBJECT));
+    assert(isfolder(subj_folder), 'Subject folder not found:\n  %s', subj_folder);
+    if strcmp(get(0,'Diary'), 'on')
+        diary off;   % just in case a previous run left it open
     end
-end
-t0_unix = t_nidaq(1);
-t_niq   = t_nidaq - t0_unix;
-
-% Audio aligned to same epoch
-t_aud  = audio.recording_time - t0_unix;
-dt_a   = diff(t_aud);  fs_audio = 1 / median(dt_a(dt_a > 0));
-fprintf('Audio fs: %.1f Hz\n', fs_audio);
-
-% Trial window
-[t_start_unix, t_end_unix] = parse_trial_window(events);
-if isnan(t_start_unix)||isnan(t_end_unix), error('Cannot parse START/END from events.csv'); end
-t_ws = t_start_unix - t0_unix;  t_we = t_end_unix - t0_unix;
-fprintf('Trial window: %.3f – %.3f s (%.1f s)\n', t_ws, t_we, t_we-t_ws);
-
-%% SECTION 4 — NI-DAQ (display only)
-xL = (nidaq.ai9  - mean(nidaq.ai9 (1:N_BASELINE_OFFSET)))*V2G;
-yL = (nidaq.ai10 - mean(nidaq.ai10(1:N_BASELINE_OFFSET)))*V2G;
-zL = (nidaq.ai11 - mean(nidaq.ai11(1:N_BASELINE_OFFSET)))*V2G;draw_collisions
-xR = (nidaq.ai12 - mean(nidaq.ai12(1:N_BASELINE_OFFSET)))*V2G;
-yR = (nidaq.ai13 - mean(nidaq.ai13(1:N_BASELINE_OFFSET)))*V2G;
-zR = (nidaq.ai14 - mean(nidaq.ai14(1:N_BASELINE_OFFSET)))*V2G;
-mag_nat = max(sqrt(xL.^2+yL.^2+zL.^2), sqrt(xR.^2+yR.^2+zR.^2));
-ds = max(1, round(ACCEL_FS/TARGET_FS));
-[mag_ds, t_ds] = aa_downsample(mag_nat, t_niq, ACCEL_FS, TARGET_FS, 4, ds);
-
-%% SECTION 5 — AUDIO DETECTION
-ch_list = select_audio_channels(audio.Properties.VariableNames);
-assert(~isempty(ch_list), 'No recognised mixer channels in audio.csv');
-fprintf('Audio mixer channels (accelerometer inputs): %s\n', strjoin(ch_list,', '));
-
-ch_bp = zeros(height(audio), numel(ch_list));
-for k = 1:numel(ch_list)
-    raw = double(audio.(ch_list{k})); raw = raw - mean(raw,'omitnan');
-    if numel(raw) > 10*fs_audio, raw = bandpass(raw,[AUDIO_BP_LOW AUDIO_BP_HIGH],fs_audio); end
-    ch_bp(:,k) = raw;
-end
-audio_max_bp = max(abs(ch_bp), [], 2);
-env          = sqrt(movmean(audio_max_bp.^2, max(3, round(fs_audio*AUDIO_RMS_WIN_SEC))));
-
-in_trial  = t_aud >= t_ws & t_aud <= t_we;
-env_trial = env(in_trial);
-t_trial   = t_aud(in_trial);
-thresh    = PEAK_HEIGHT_FACTOR * mean(env_trial);
-[~, locs] = findpeaks(env_trial, t_trial, 'MinPeakDistance', 0.5, 'MinPeakHeight', thresh);
-
-coll_t    = locs(:);
-coll_unix = t0_unix + coll_t;
-n_coll    = numel(coll_t);
-fprintf('\nCollisions detected: %d\n', n_coll);
-for ci = 1:n_coll, fprintf('  [%02d] %.3f s\n', ci, coll_t(ci)); end
-
-%% SECTION 6 — INTENSITY (peak NI-DAQ magnitude around each collision)
-hw       = round(INTENSITY_WIN_SEC * TARGET_FS);
-intens_g = nan(n_coll,1);
-for ci = 1:n_coll
-    [~,ic] = min(abs(t_ds - coll_t(ci)));
-    intens_g(ci) = max(mag_ds(max(1,ic-hw):min(end,ic+hw)));
-end
-
-%% SECTION 7 — FIGURE
-n_rows = 2 + SHOW_RAW_CH*2;
-figure('Name', sprintf('%s | %s | %s', SUBJECT, PHASE, ACQUISITION), 'Units','normalized','Position',[0.02 0.04 0.95 0.88]);
-row = 0;
-
-% Audio mixer — channels faint + max envelope bold + threshold line + peaks
-row=row+1; ax_aud = subplot(n_rows,1,row); hold on;
-clrs_a = lines(numel(ch_list));
-for k = 1:numel(ch_list)
-    plot(t_aud, ch_bp(:,k), 'g', 'LineWidth',0.2, 'DisplayName',ch_list{k});
-end
-%plot(t_aud, audio_max_bp, 'Color',[0.1 0.1 0.7], 'LineWidth',1.2, 'DisplayName','Max');
-plot(t_aud, env, 'r', 'LineWidth',1.5, 'DisplayName','RMS env');
-yline(thresh,'k--','LineWidth',1,'HandleVisibility','off');
-draw_window(t_ws,t_we); draw_collisions(coll_t, env, t_aud,intens_g);
-if ~isempty(YLIM_AUDIO), ylim(YLIM_AUDIO); end
-ylabel('V'); title(sprintf('Audio mixer — accelerometer channels, bandpassed %d–%d Hz (fs≈%.0f Hz)', ...
-    AUDIO_BP_LOW,AUDIO_BP_HIGH,fs_audio));
-legend('Location','northeast','FontSize',7); grid on;
-
-% NI-DAQ magnitude — verification only
-row=row+1; ax_niq = subplot(n_rows,1,row); hold on;
-plot(t_ds, mag_ds, 'Color',[0.2 0.45 0.8],'LineWidth',0.8,'DisplayName','NI-DAQ mag');
-draw_window(t_ws,t_we); draw_collisions(coll_t, mag_ds, t_ds,intens_g);
-if ~isempty(YLIM_ACCEL), ylim(YLIM_ACCEL); end
-ylabel('Magnitude (g)'); title(sprintf('NI-DAQ — verification only, downsampled to %d Hz',TARGET_FS)); grid on;
-
-if SHOW_RAW_CH
-    ds2 = max(1,round(ACCEL_FS/200));  td = t_niq(1:ds2:end);
-    row=row+1; ax_rawL = subplot(n_rows,1,row); hold on;
-    plot(td,xL(1:ds2:end),'r',td,yL(1:ds2:end),'g',td,zL(1:ds2:end),'b','LineWidth',0.5);
-    draw_window(t_ws,t_we); ylabel('g'); title('NI-DAQ — Left (X/Y/Z)');
-    legend('X','Y','Z','Location','northeast','FontSize',7); grid on;
-    row=row+1; ax_rawR = subplot(n_rows,1,row); hold on;
-    plot(td,xR(1:ds2:end),'r',td,yR(1:ds2:end),'g',td,zR(1:ds2:end),'b','LineWidth',0.5);
-    draw_window(t_ws,t_we); ylabel('g'); title('NI-DAQ — Right (X/Y/Z)');
-    legend('X','Y','Z','Location','northeast','FontSize',7); grid on;
-    linkaxes([ax_aud ax_niq ax_rawL ax_rawR],'x');
-else
-    linkaxes([ax_aud ax_niq],'x');
-end
-xlabel('Time (s)');
-sgtitle(sprintf('%s  |  %s  |  %s  —  %d collisions  (threshold = %.1f × mean env)',SUBJECT, PHASE, ACQUISITION, n_coll, PEAK_HEIGHT_FACTOR), 'FontSize',12,'FontWeight','bold');
-
-%% SECTION 8 — SAVE
-if strcmpi(strtrim(input('\nSave results? [y/n]: ','s')), 'y')
-    summary.subject        = SUBJECT;  summary.phase = PHASE;  summary.acquisition = ACQUISITION;
-    summary.acq_folder     = acq_folder;  summary.t0_unix = t0_unix;
-    summary.t_win_start    = t_ws;  summary.t_win_end = t_we;
-    summary.n_collisions   = n_coll;
-    summary.collision_unix = coll_unix;  summary.collision_rel = coll_t;
-    summary.intensity_g    = intens_g;
-    summary.params = struct('accel_fs',ACCEL_FS,'bp_low',BP_LOW,'bp_high',BP_HIGH, ...
-        'target_fs',TARGET_FS,'audio_bp_low',AUDIO_BP_LOW,'audio_bp_high',AUDIO_BP_HIGH, ...
-        'audio_rms_win_sec',AUDIO_RMS_WIN_SEC,'peak_min_dist_sec',PEAK_MIN_DIST_SEC, ...
-        'peak_height_factor',PEAK_HEIGHT_FACTOR,'intensity_win_sec',INTENSITY_WIN_SEC);
-    save(fullfile(acq_folder,'collision_summary.mat'), 'summary');
-    fprintf('Saved: %s\n', fullfile(acq_folder,'collision_summary.mat'));
-else
-    fprintf('Not saved.\n');
-end
-
-%% LOCAL FUNCTIONS
-function [ts, te] = parse_trial_window(ev)
-    ts = NaN; te = NaN;
-    if isempty(ev), return; end
-    if ismember('recording_time', ev.Properties.VariableNames), tc = ev.recording_time;
-    else
-        nm = varfun(@isnumeric, ev,'OutputFormat','uniform');
-        if ~any(nm), return; end; tc = ev{:,find(nm,1)};
+    if isfile(report_file)
+        delete(report_file);   % diary() appends, so clear any stale report first
     end
-    if iscell(tc), tc = str2double(tc); end
-    if ~ismember('data',ev.Properties.VariableNames), return; end
-    end_m = contains(ev.data,'END') & ~contains(ev.data,'START');
-    st_m  = contains(ev.data,'START') & ~contains(ev.data,'END');
-    kb_m  = contains(ev.data,'[Publisher]') & contains(ev.data,'event_spacebar');
-    if ~any(end_m), return; end
-    te = tc(find(end_m,1,'last'));
-    kb_b = kb_m & (tc < te);
-    if any(kb_b), ts = tc(find(kb_b,1,'last'));
-    elseif any(st_m), ts = tc(find(st_m,1,'first')); end
-end
-
-function ch = select_audio_channels(col_names)
-    nw = intersect({'ch11','ch12','ch13','ch14','ch16','ch17'}, col_names,'stable');
-    ol = intersect({'ch12','ch13','ch14','ch16','ch17','ch18'}, col_names,'stable');
-    if numel(nw) >= numel(ol), ch = nw; else, ch = ol; end
-end
-
-function [sd, td] = aa_downsample(sig, t, fi, fo, ord, ds)
-    [b,a] = butter(ord, min(fo/2*0.9/(fi/2),0.99),'low');
-    sf = filtfilt(b,a,double(sig));  nd = floor(numel(sf)/ds);
-    sd = zeros(nd,1); td = zeros(nd,1);
-    for k=1:nd, idx=(k-1)*ds+1:k*ds; sd(k)=mean(sf(idx)); td(k)=t(idx(1)); end
-end
-
-function draw_window(tw_s, tw_e)
-    yl = ylim;
-    fill([tw_s tw_e tw_e tw_s],[yl(1) yl(1) yl(2) yl(2)],[0.85 0.95 0.75], ...
-         'EdgeColor','none','FaceAlpha',0.25,'HandleVisibility','off');
-    xline(tw_s,'--','START','Color',[0.3 0.6 0.3],'LineWidth',1.2,'HandleVisibility','off','LabelHorizontalAlignment','right');
-    xline(tw_e,'--','END',  'Color',[0.7 0.2 0.2],'LineWidth',1.2,'HandleVisibility','off','LabelHorizontalAlignment','left');
-end
-
-function draw_collisions(ct, ref_sig, ref_t, intens_g)
-    clr = [0.85 0.2 0.1];
-    for ci = 1:numel(ct)
-        [~,ix] = min(abs(ref_t - ct(ci)));
-        yval = ref_sig(ix)*1.15;
-        dn = ''; if ci==1, dn = 'Collision'; end
-        stem(ct(ci), yval,'Color',clr,'LineWidth',2,'Marker','v', ...
-             'MarkerSize',6,'MarkerFaceColor',clr,'DisplayName',dn);
-        if nargin > 3 && ~isnan(intens_g(ci))
-            text(ct(ci), yval*1.05, sprintf('%d\n%.1fg',ci,intens_g(ci)), ...
-                 'HorizontalAlignment','center','FontSize',7,'Color',clr);
+    diary(report_file);
+    diary on;
+    
+    %% SECTION 3 — LOOP THROUGH ALL PHASES AUTOMATICALLY
+    allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
+    
+    fprintf('\n=== CollisionDetection_Local — FULL AUTO MODE ===\n');
+    fprintf('Subject : %s\n', SUBJECT);
+    fprintf('Phases  : %s\n\n', strjoin(allPhases, ', '));
+    
+    grandLog = struct([]);   % accumulates every acquisition across every phase, for the final report
+    
+    for pIdx = 1:numel(allPhases)
+    
+        PHASE = allPhases{pIdx};
+        phase_folder = fullfile(subj_folder, PHASE);
+    
+        if ~isfolder(phase_folder)
+            fprintf('--- Skipping phase "%s" (folder not found) ---\n\n', PHASE);
+            continue;
         end
+    
+        
+        fprintf(' PHASE: %s\n', PHASE);
+        
+    
+        if startsWith(PHASE, 'Baseline', 'IgnoreCase', true)
+            acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:5, 'UniformOutput', false);
+        else
+            acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:10, 'UniformOutput', false);
+        end
+    
+        phaseLog = struct([]);   % accumulates every acquisition within this phase
+    
+        for aIdx = 1:numel(acquisitions)
+    
+            ACQUISITION = acquisitions{aIdx};
+            acq_folder  = fullfile(phase_folder, ACQUISITION);
+    
+            if ~isfolder(acq_folder)
+                if isfolder([acq_folder '_R'])
+                    acq_folder = [acq_folder '_R'];
+                else
+                    fprintf('  [skip] %s — folder not found\n', ACQUISITION);
+                    continue;
+                end
+            end
+    
+            accel_file  = fullfile(acq_folder, 'accel.mat');
+            audio_file  = fullfile(acq_folder, 'audio.mat');
+            events_file = fullfile(acq_folder, 'events.mat');
+    
+            if ~isfile(accel_file) || ~isfile(audio_file) || ~isfile(events_file)
+                fprintf('  [skip] %s — missing accel/audio/events.mat\n', ACQUISITION);
+                continue;
+            end
+    
+            %% ---- LOAD ----
+            A = load(accel_file);   ACCEL  = A.ACCEL;
+            U = load(audio_file);   AUDIO  = U.AUDIO;
+            E = load(events_file);  EVENTS = E.EVENTS;
+    
+            %% ---- ACCELEROMETER ----
+            t_niq      = ACCEL.time_rel;
+            t0_unix    = ACCEL.t0_unix;
+            ACCEL_FS   = ACCEL.fs_nominal;
+    
+            N_BASELINE = 50;
+            V2G        = 1 / 0.4;
+            accel_raw  = ACCEL.data;
+    
+            xL = baseline_and_scale(accel_raw(:,1), N_BASELINE, V2G);
+            yL = baseline_and_scale(accel_raw(:,2), N_BASELINE, V2G);
+            zL = baseline_and_scale(accel_raw(:,3), N_BASELINE, V2G);
+            xR = baseline_and_scale(accel_raw(:,4), N_BASELINE, V2G);
+            yR = baseline_and_scale(accel_raw(:,5), N_BASELINE, V2G);
+            zR = baseline_and_scale(accel_raw(:,6), N_BASELINE, V2G);
+    
+            mag_nat = max(sqrt(xL.^2+yL.^2+zL.^2), sqrt(xR.^2+yR.^2+zR.^2));
+    
+            ds = max(1, round(ACCEL_FS / TARGET_FS));
+            [mag_ds, t_ds] = aa_downsample(mag_nat, t_niq, ACCEL_FS, TARGET_FS, 4, ds);
+    
+            %% ---- AUDIO ----
+            t_aud    = AUDIO.time_rel;
+            fs_audio = AUDIO.fs_estimated;
+            ch_names = AUDIO.channel_names;
+    
+            known_new = {'ch11','ch12','ch13','ch14','ch16','ch17'};
+            known_old = {'ch12','ch13','ch14','ch16','ch17','ch18'};
+            idx_new   = find(ismember(ch_names, known_new));
+            idx_old   = find(ismember(ch_names, known_old));
+            if numel(idx_new) >= numel(idx_old)
+                audio_ch_idx = idx_new;
+            else
+                audio_ch_idx = idx_old;
+            end
+            if isempty(audio_ch_idx)
+                audio_ch_idx = 1:size(AUDIO.data, 2);
+            end
+    
+            audio_raw = AUDIO.data(:, audio_ch_idx);
+            audio_bp  = bandpass_channels(audio_raw, fs_audio, AUDIO_BP_LOW, AUDIO_BP_HIGH);
+            env       = rms_envelope(audio_bp, fs_audio, AUDIO_RMS_WIN_SEC);
+    
+            %% ---- TRIAL WINDOW ----
+            t_ws = EVENTS.t_trial_start;
+            t_we = EVENTS.t_trial_end;
+    
+            in_trial    = (t_aud >= t_ws) & (t_aud <= t_we);
+            audio_trial = audio_bp(in_trial);
+            t_trial     = t_aud(in_trial);
+            env_trial   = env(in_trial);
+            keep = true(size(t_trial));
+            last_t = -inf;
+            for k = 1:numel(t_trial)
+                if t_trial(k) > last_t
+                    last_t = t_trial(k);
+                else
+                    keep(k) = false;
+                end
+            end
+            
+            n_dropped = sum(~keep);
+            if n_dropped > 0
+                fprintf('  [warn] %s — %d non-monotonic audio timestamps removed\n', ...
+                    ACQUISITION, n_dropped);
+                t_trial     = t_trial(keep);
+                audio_trial = audio_trial(keep);
+                env_trial   = env_trial(keep);
+            end
+            
+            if isempty(env_trial) || all(isnan(env_trial))
+                fprintf('  [skip] %s — empty/invalid trial window\n', ACQUISITION);
+                continue;
+            end
+            
+            % ---- AUTO-DETECT (adaptive threshold, no plot, no prompt) ----
+            thresh = 4 * mean(env_trial, 'omitnan');
+            
+            [~, locs] = findpeaks(env_trial, t_trial, ...
+                'MinPeakDistance', PEAK_MIN_DIST_SEC, 'MinPeakHeight', thresh);
+    
+            coll_t = locs(:);
+            n_coll = numel(coll_t);
+    
+            %% ---- INTENSITY ----
+            [intens_g, intens_audio] = compute_intensity( ...
+                coll_t, mag_ds, t_ds, audio_bp, t_aud, ...
+                INTENSITY_WIN_SEC, TARGET_FS, fs_audio);
+    
+            flagged = (n_coll < REVIEW_LOW_N) || (n_coll > REVIEW_HIGH_N);
+    
+            %% ---- SAVE ----
+            results = build_results(SUBJECT, PHASE, ACQUISITION, acq_folder, t0_unix, ...
+                t_ws, t_we, coll_t, intens_g, intens_audio, ...
+                AUDIO_BP_LOW, AUDIO_BP_HIGH, AUDIO_RMS_WIN_SEC, thresh, INTENSITY_WIN_SEC);
+    
+            out_file = fullfile(acq_folder, 'collision_results.mat');
+            save(out_file, 'results');
+    
+            tag = 'ok';
+            if flagged, tag = 'CHECK'; end
+            fprintf('  %-10s : n=%2d  |  g[min/max]=%.2f/%.2f  |  audio[min/max]=%.4f/%.4f  |  thresh=%.4f  [%s]\n', ...
+                ACQUISITION, n_coll, ...
+                safe_min(intens_g), safe_max(intens_g), ...
+                safe_min(intens_audio), safe_max(intens_audio), ...
+                thresh, tag);
+    
+            %% ---- LOG FOR REPORT ----
+            rec.acquisition = ACQUISITION;
+            rec.phase       = PHASE;
+            rec.n_coll      = n_coll;
+            rec.coll_t      = coll_t;
+            rec.intens_g    = intens_g;
+            rec.intens_audio= intens_audio;
+            rec.thresh      = thresh;
+            rec.flagged     = flagged;
+            rec.duration    = t_we - t_ws;
+    
+            phaseLog = [phaseLog, rec]; %#ok<AGROW>
+            grandLog = [grandLog, rec]; %#ok<AGROW>
+    
+        end % acquisition loop
+    
+        % ---- PHASE QUALITY REPORT ----
+        print_phase_report(PHASE, phaseLog, REVIEW_LOW_N, REVIEW_HIGH_N);
+    
+    end % phase loop
+
+    %% SECTION 4 — GRAND SUMMARY ACROSS ALL PHASES
+    print_grand_report(SUBJECT, grandLog, REVIEW_LOW_N, REVIEW_HIGH_N);
+    
+    fprintf('\n=== ALL PHASES PROCESSED FOR %s ===\n\n', SUBJECT);
+    diary off;
+    fprintf('\n[REPORT SAVED] → %s\n\n', report_file);
+end
+%% LOCAL FUNCTIONS 
+
+function v = safe_min(x)
+    if isempty(x), v = NaN; else, v = min(x); end
+end
+function v = safe_max(x)
+    if isempty(x), v = NaN; else, v = max(x); end
+end
+
+function results = build_results(SUBJECT, PHASE, ACQUISITION, acq_folder, t0_unix, ...
+        t_ws, t_we, coll_t, intens_g, intens_audio, ...
+        AUDIO_BP_LOW, AUDIO_BP_HIGH, AUDIO_RMS_WIN_SEC, thresh_used, INTENSITY_WIN_SEC)
+
+    results.subject        = SUBJECT;
+    results.phase          = PHASE;
+    results.acquisition    = ACQUISITION;
+    results.acq_folder     = acq_folder;
+    results.t0_unix        = t0_unix;
+    results.t_win_start    = t_ws;
+    results.t_win_end      = t_we;
+    results.n_collisions   = numel(coll_t);
+    results.collision_rel  = coll_t;
+    results.collision_unix = t0_unix + coll_t;
+    results.peak_accel_g   = intens_g;
+    results.peak_audio     = intens_audio;
+    results.save_time      = datetime('now');
+    results.params         = struct( ...
+        'audio_bp_low',       AUDIO_BP_LOW, ...
+        'audio_bp_high',      AUDIO_BP_HIGH, ...
+        'audio_rms_win_sec',  AUDIO_RMS_WIN_SEC, ...
+        'adaptive_thresh',    thresh_used, ...
+        'intensity_win_sec',  INTENSITY_WIN_SEC);
+end
+
+function p = expanduser(p)
+    if startsWith(p,'~')
+        home = char(java.lang.System.getProperty('user.home'));
+        p    = [home, p(2:end)];
+    end
+end
+
+function ch = baseline_and_scale(raw, n_base, V2G)
+    n_bl = min(n_base, numel(raw));
+    ch   = (raw - mean(raw(1:n_bl))) * V2G;
+end
+
+function out = bandpass_channels(mat, fs, flo, fhi)
+    out = zeros(size(mat,1), 1);
+    for k = 1:size(mat,2)
+        col = double(mat(:,k));
+        col = col - mean(col, 'omitnan');
+        if numel(col) > 10*fs
+            col = bandpass(col, [flo fhi], fs);
+        end
+        out = max(out, abs(col));
+    end
+end
+
+function env = rms_envelope(sig, fs, win_sec)
+    win = max(3, round(fs * win_sec));
+    env = sqrt(movmean(sig.^2, win));
+end
+
+function [sd, td] = aa_downsample(sig, t, fi, ~, ord, ds)
+    Wn = min(0.99, (fi/ds/2*0.9) / (fi/2));
+    [b,a] = butter(ord, Wn, 'low');
+    sf = filtfilt(b, a, double(sig));
+    nd = floor(numel(sf)/ds);
+    sd = zeros(nd,1);  td = zeros(nd,1);
+    for k = 1:nd
+        idx    = (k-1)*ds+1 : k*ds;
+        sd(k)  = mean(sf(idx));
+        td(k)  = t(idx(1));
+    end
+end
+
+function [ig, ia] = compute_intensity(ct, mag_ds, t_ds, audio_bp, t_aud, ...
+                                       win_sec, tgt_fs, fs_aud)
+    n   = numel(ct);
+    ig  = nan(n,1);
+    ia  = nan(n,1);
+    hwa = round(win_sec * tgt_fs);
+    hwu = round(win_sec * fs_aud);
+    for ci = 1:n
+        [~,ic] = min(abs(t_ds  - ct(ci)));
+        [~,iu] = min(abs(t_aud - ct(ci)));
+        ig(ci) = max(mag_ds(  max(1,ic-hwa):min(numel(mag_ds),  ic+hwa)));
+        ia(ci) = max(audio_bp(max(1,iu-hwu):min(numel(audio_bp),iu+hwu)));
+    end
+end
+
+%% ---------------- REPORTING ----------------
+
+function print_phase_report(PHASE, phaseLog, lowN, highN)
+
+    fprintf('\n------------------------------------------------------------\n');
+    fprintf(' DATA QUALITY REPORT — Phase: %s\n', PHASE);
+    fprintf('------------------------------------------------------------\n');
+
+    if isempty(phaseLog)
+        fprintf('  No acquisitions processed for this phase.\n\n');
+        return;
+    end
+
+    nAcq   = numel(phaseLog);
+    counts = arrayfun(@(r) r.n_coll, phaseLog);
+
+    fprintf('  Acquisitions processed : %d\n', nAcq);
+    fprintf('  Total collisions found : %d\n', sum(counts));
+    fprintf('  Collisions per rep     : min=%d  max=%d  mean=%.1f  median=%.1f  std=%.2f\n', ...
+        min(counts), max(counts), mean(counts), median(counts), std(counts));
+
+    [~, iMin] = min(counts);
+    [~, iMax] = max(counts);
+    fprintf('    → fewest  collisions : %-10s (n=%d)\n', phaseLog(iMin).acquisition, counts(iMin));
+    fprintf('    → most    collisions : %-10s (n=%d)\n', phaseLog(iMax).acquisition, counts(iMax));
+
+    flaggedIdx = find(arrayfun(@(r) r.flagged, phaseLog));
+    if isempty(flaggedIdx)
+        fprintf('  Flagged reps (n<%d or n>%d) : none\n', lowN, highN);
+    else
+        flaggedNames = arrayfun(@(i) sprintf('%s(n=%d)', phaseLog(i).acquisition, phaseLog(i).n_coll), ...
+            flaggedIdx, 'UniformOutput', false);
+        fprintf('  Flagged reps (n<%d or n>%d) : %s\n', lowN, highN, strjoin(flaggedNames, ', '));
+    end
+
+    % ---- Intensity stats across all collisions in this phase ----
+    allG     = vertcat(phaseLog.intens_g);
+    allAudio = vertcat(phaseLog.intens_audio);
+    allG     = allG(~isnan(allG));
+    allAudio = allAudio(~isnan(allAudio));
+
+    if ~isempty(allG)
+        fprintf('\n  Accel intensity (peak g) across all collisions:\n');
+        fprintf('    min=%.2f  max=%.2f  mean=%.2f  median=%.2f  std=%.2f\n', ...
+            min(allG), max(allG), mean(allG), median(allG), std(allG));
+    else
+        fprintf('\n  Accel intensity: no collisions detected in this phase.\n');
+    end
+
+    if ~isempty(allAudio)
+        fprintf('  Audio intensity (peak amplitude) across all collisions:\n');
+        fprintf('    min=%.4f  max=%.4f  mean=%.4f  median=%.4f  std=%.4f\n', ...
+            min(allAudio), max(allAudio), mean(allAudio), median(allAudio), std(allAudio));
+    end
+
+    % ---- Strongest / weakest single collision (by accel-g) ----
+    [strongVal, strongLoc] = find_extreme_collision(phaseLog, 'max');
+    [weakVal,   weakLoc]   = find_extreme_collision(phaseLog, 'min');
+
+    if ~isnan(strongVal)
+        fprintf('\n  STRONGEST single collision : %-10s  t=%.3fs  peak-g=%.2f\n', ...
+            strongLoc.acquisition, strongLoc.t, strongVal);
+    end
+    if ~isnan(weakVal)
+        fprintf('  WEAKEST   single collision : %-10s  t=%.3fs  peak-g=%.2f\n', ...
+            weakLoc.acquisition, weakLoc.t, weakVal);
+    end
+
+    % ---- Adaptive threshold spread (sanity check across reps) ----
+    threshVals = arrayfun(@(r) r.thresh, phaseLog);
+    fprintf('\n  Adaptive threshold used : min=%.4f  max=%.4f  mean=%.4f\n', ...
+        min(threshVals), max(threshVals), mean(threshVals));
+
+   
+end
+
+function [val, loc] = find_extreme_collision(phaseLog, mode)
+    val = NaN; loc = struct('acquisition','', 't', NaN);
+    for k = 1:numel(phaseLog)
+        g = phaseLog(k).intens_g;
+        t = phaseLog(k).coll_t;
+        if isempty(g), continue; end
+        switch mode
+            case 'max'
+                [v, i] = max(g);
+                better = isnan(val) || v > val;
+            case 'min'
+                [v, i] = min(g);
+                better = isnan(val) || v < val;
+        end
+        if better
+            val = v;
+            loc.acquisition = phaseLog(k).acquisition;
+            loc.t = t(i);
+        end
+    end
+end
+
+function print_grand_report(SUBJECT, grandLog, lowN, highN)
+
+    
+    fprintf(' GRAND SUMMARY — Subject: %s  (all phases combined)\n', SUBJECT);
+    
+
+    if isempty(grandLog)
+        fprintf('  No data processed.\n\n');
+        return;
+    end
+
+    phases = unique({grandLog.phase}, 'stable');
+    fprintf('  Phases processed : %s\n', strjoin(phases, ', '));
+    fprintf('  Total acquisitions : %d\n', numel(grandLog));
+
+    counts = arrayfun(@(r) r.n_coll, grandLog);
+    fprintf('  Total collisions across all phases : %d\n', sum(counts));
+    fprintf('  Collisions per rep (global) : min=%d  max=%d  mean=%.1f  std=%.2f\n', ...
+        min(counts), max(counts), mean(counts), std(counts));
+
+    flaggedCount = sum(arrayfun(@(r) r.flagged, grandLog));
+    fprintf('  Flagged reps (n<%d or n>%d) : %d / %d (%.1f%%)\n', ...
+        lowN, highN, flaggedCount, numel(grandLog), 100*flaggedCount/numel(grandLog));
+
+    allG     = vertcat(grandLog.intens_g);
+    allAudio = vertcat(grandLog.intens_audio);
+    allG     = allG(~isnan(allG));
+    allAudio = allAudio(~isnan(allAudio));
+
+    if ~isempty(allG)
+        fprintf('\n  Accel intensity (peak g) — ALL phases:\n');
+        fprintf('    min=%.2f  max=%.2f  mean=%.2f  median=%.2f  std=%.2f\n', ...
+            min(allG), max(allG), mean(allG), median(allG), std(allG));
+    end
+    if ~isempty(allAudio)
+        fprintf('  Audio intensity — ALL phases:\n');
+        fprintf('    min=%.4f  max=%.4f  mean=%.4f  median=%.4f  std=%.4f\n', ...
+            min(allAudio), max(allAudio), mean(allAudio), median(allAudio), std(allAudio));
+    end
+
+    [strongVal, strongLoc] = find_extreme_collision(grandLog, 'max');
+    [weakVal,   weakLoc]   = find_extreme_collision(grandLog, 'min');
+
+    if ~isnan(strongVal)
+        fprintf('\n  STRONGEST collision overall : %s | %-10s  t=%.3fs  peak-g=%.2f\n', ...
+            find_phase_of(grandLog, strongLoc.acquisition), strongLoc.acquisition, strongLoc.t, strongVal);
+    end
+    if ~isnan(weakVal)
+        fprintf('  WEAKEST   collision overall : %s | %-10s  t=%.3fs  peak-g=%.2f\n', ...
+            find_phase_of(grandLog, weakLoc.acquisition), weakLoc.acquisition, weakLoc.t, weakVal);
+    end
+end
+
+function phaseName = find_phase_of(grandLog, acqName)
+    idx = find(strcmp({grandLog.acquisition}, acqName), 1);
+    if isempty(idx)
+        phaseName = '?';
+    else
+        phaseName = grandLog(idx).phase;
     end
 end

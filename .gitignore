@@ -4,3 +4,9 @@ recordings
 resting_state
 venv_converter
 data
+subject_io/
+*.mat
+*.mcap
+*.mcap.zstd
+*.mat
+*.asv
