@@ -1,8 +1,6 @@
 %% CollisionDetection_Local.m
 %  Automatically walks through every acquisition of a given PHASE for one
-%  SUBJECT, running collision auto-detection + interactive review on each,
-%  mirroring the loop structure of Training_OnSet_MovEEG.m.
-%
+%  SUBJECT, running collision auto-detection + interactive review on each
 %  WORKFLOW:
 %    1. Enter SUBJECT and PHASE when prompted.
 %    2. Script determines all acquisitions in that phase automatically.
@@ -43,8 +41,7 @@ base = expanduser(BASE_FOLDER);
 
 SUBJECT = input('Enter subject ID (e.g. s02N): ', 's');
 
-validPhases = {'Baseline1','Baseline2','Test1','Test2', ...
-               'level_L1','level_L2','level_L3','level_L4','level_L5'};
+validPhases = {'Baseline1','Baseline2','Test1','Test2','level_L1','level_L2','level_L3','level_L4','level_L5'};
 fprintf('\nValid phases: %s\n', strjoin(validPhases, ', '));
 PHASE = input('Enter phase to analyse: ', 's');
 
@@ -95,11 +92,9 @@ for aIdx = 1:numel(acquisitions)
         continue;
     end
 
-    fprintf('\n============================================================\n');
     fprintf(' Processing: %s | %s | %s\n', SUBJECT, PHASE, ACQUISITION);
     fprintf(' Folder    : %s\n', acq_folder);
-    fprintf('============================================================\n');
-
+    
     %% LOAD .mat FILES
     A = load(accel_file);   ACCEL  = A.ACCEL;
     U = load(audio_file);   AUDIO  = U.AUDIO;
@@ -167,9 +162,7 @@ for aIdx = 1:numel(acquisitions)
     fprintf('Auto-detected : %d collisions\n', numel(coll_t));
 
     %% INTENSITY FEATURES
-    [intens_g, intens_audio] = compute_intensity( ...
-        coll_t, mag_ds, t_ds, audio_bp, t_aud, ...
-        INTENSITY_WIN_SEC, TARGET_FS, fs_audio);
+    [intens_g, intens_audio] = compute_intensity(coll_t, mag_ds, t_ds, audio_bp, t_aud,INTENSITY_WIN_SEC, TARGET_FS, fs_audio);
 
     %% OPTIONAL: RELOAD PREVIOUS MANUAL CORRECTIONS
     out_file = fullfile(acq_folder, 'collision_results.mat');
@@ -188,10 +181,8 @@ for aIdx = 1:numel(acquisitions)
     if isempty(hFig) || ~ishandle(hFig)
         hFig = figure('Units','normalized', 'Position',[0.03 0.05 0.94 0.85]);
     end
-    plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
-        t_aud, audio_bp, env, thresh, t_ds, mag_ds, t_ws, t_we, ...
-        SHOW_RAW_CH, t_niq, ACCEL_FS, xL, yL, zL, xR, yR, zR, ...
-        YLIM_ACCEL, YLIM_AUDIO, TARGET_FS, AUDIO_BP_LOW, AUDIO_BP_HIGH, ...
+    plot_collision_figure(hFig, coll_t, intens_g, intens_audio,t_aud, audio_bp, env, thresh, t_ds, mag_ds, t_ws, t_we, ...
+        SHOW_RAW_CH, t_niq, ACCEL_FS, xL, yL, zL, xR, yR, zR,YLIM_ACCEL, YLIM_AUDIO, TARGET_FS, AUDIO_BP_LOW, AUDIO_BP_HIGH, ...
         PEAK_HEIGHT_FACTOR, INTENSITY_WIN_SEC, SUBJECT, PHASE, ACQUISITION);
 
     %% INTERACTIVE REVIEW LOOP FOR THIS ACQUISITION
@@ -295,7 +286,7 @@ for k = 1:numel(summary)
 end
 fprintf('\nDone.\n\n');
 
-%% ==================== LOCAL FUNCTIONS ====================
+%%  LOCAL FUNCTIONS 
 
 function print_collision_list(coll_t, intens_g, intens_audio)
     fprintf('\n--- Current collisions (%d) ---\n', numel(coll_t));

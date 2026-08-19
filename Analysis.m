@@ -7,8 +7,8 @@ clear; clc;
 
 %  CONFIGURATION
 
-BASE_FOLDER = '/home/acatalano/Desktop/VIRTUES';
-SAVE_PATH   = '/home/acatalano/Desktop/Virtues_data';
+BASE_FOLDER = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';
+SAVE_PATH   = '/home/acatalano/Desktop/Virtues_Data';
 
 
 % NI-DAQ

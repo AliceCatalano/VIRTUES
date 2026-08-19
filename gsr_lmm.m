@@ -1,0 +1,67 @@
+%% run_training_lmms.m
+% Driver for SAP Section 4.2 (training-phase learning-rate models) applied
+% to the physiological (EDA) outcomes listed in Section 3.3, with FDR
+% correction across those outcomes per Section 8.
+%
+% Physiological outcomes tested here (mapped onto columns of the feature
+% table from gsr_extract_features.m):
+%   - Mean SCL                 -> scl_mean
+%   - SCR frequency             -> scr_freq
+%   - Mean SCR amplitude        -> scr_mean_amp
+%   - Event-locked SCR amplitude -> collision_scr_amp_mean
+%
+% For each, the primary test is the Haptic x Repetition interaction
+% (differential learning rate, H1). Level main/interaction effects are
+% also in the fitted model and visible in the full lme output printed by
+% gsr_training_lmm.m -- only the interaction term is pulled out here for
+% the FDR summary since that's what the SAP designates as primary.
+
+clear; clc;
+cfg = config();
+
+feat_file = fullfile(cfg.output_root, 'eda_features.mat');
+if ~isfile(feat_file)
+    fprintf('No cached feature table found -- running gsr_extract_features (this walks all subjects/acquisitions and may take a while)...\n');
+    T = gsr_extract_features(cfg);
+else
+    fprintf('Loading cached feature table from %s\n', feat_file);
+    fprintf('(delete this file and rerun if gsr_extract_features.m or upstream preprocessing has changed)\n');
+    loaded = load(feat_file, 'T');
+    T = loaded.T;
+end
+
+outcomes = {'scl_mean', 'scr_freq', 'scr_mean_amp', 'collision_scr_amp_mean'};
+
+results = cell(numel(outcomes), 1);
+for i = 1:numel(outcomes)
+    results{i} = gsr_training_lmm(T, outcomes{i});
+end
+
+p_vals  = cellfun(@(r) r.interaction_p, results);
+p_fdr   = local_bh_fdr(p_vals);
+
+fprintf('\n\n=== Summary: Haptic x Repetition interaction (differential learning rate) ===\n');
+fprintf('%-25s %10s %10s %10s %10s\n', 'Outcome', 'beta', 'SE', 'p', 'p_FDR');
+for i = 1:numel(outcomes)
+    r = results{i};
+    fprintf('%-25s %10.4f %10.4f %10.4f %10.4f\n', ...
+        outcomes{i}, r.interaction_beta, r.interaction_se, r.interaction_p, p_fdr(i));
+end
+
+save(fullfile(cfg.output_root, 'training_lmm_results.mat'), 'results', 'outcomes', 'p_fdr');
+fprintf('\nSaved results to %s\n', fullfile(cfg.output_root, 'training_lmm_results.mat'));
+
+
+function p_adj = local_bh_fdr(p)
+% Benjamini-Hochberg FDR correction (no toolbox dependency).
+    p = p(:);
+    n = numel(p);
+    [p_sorted, idx] = sort(p);
+    ranks = (1:n)';
+    p_adj_sorted = p_sorted .* n ./ ranks;
+    % enforce monotonicity from the largest p-value down
+    p_adj_sorted = flipud(cummin(flipud(p_adj_sorted)));
+    p_adj_sorted = min(p_adj_sorted, 1);
+    p_adj = zeros(n, 1);
+    p_adj(idx) = p_adj_sorted;
+end

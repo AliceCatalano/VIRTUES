@@ -49,7 +49,7 @@ YLIM_AUDIO           = [];
 %% SECTION 2 — ASK USER FOR SUBJECT + PHASE
 base = expanduser(BASE_FOLDER);
 
-SUBJECT = input('Enter subject ID (e.g. s02N): ', 's');
+SUBJECT = 's40H';
 
 validPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
 fprintf('\nValid phases: %s\n', strjoin(validPhases, ', '));
@@ -131,6 +131,7 @@ for aIdx = 1:numel(acquisitions)
     mag_nat = max(sqrt(xL.^2+yL.^2+zL.^2), sqrt(xR.^2+yR.^2+zR.^2));
 
     ds = max(1, round(ACCEL_FS / TARGET_FS));
+    % brign all to 0 and band pass filter
     [mag_ds, t_ds] = aa_downsample(mag_nat, t_niq, ACCEL_FS, TARGET_FS, 4, ds);
 
     %% EXTRACT SIGNALS — audio
@@ -389,10 +390,10 @@ function plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
         YLIM_ACCEL, YLIM_AUDIO, TARGET_FS, AUDIO_BP_LOW, AUDIO_BP_HIGH, ...
         FIXED_AUDIO_THRESHOLD, INTENSITY_WIN_SEC, SUBJECT, PHASE, ACQUISITION)
 
-    figure(hFig); clf(hFig);
+    figure; %clf(hFig);
     n_rows = 2 + SHOW_RAW_CH * 2;
 
-    ax_aud = subplot(n_rows, 1, 1, 'Parent', hFig);
+    ax_aud = subplot(n_rows, 1, 1);%)%, 'Parent', hFig);
     hold(ax_aud, 'on');
     plot(ax_aud, t_aud, audio_bp, 'Color',[0.5 0.5 0.5 0.35], 'LineWidth',0.4, 'DisplayName','bandpassed max');
     plot(ax_aud, t_aud, env, 'r', 'LineWidth',1.6, 'DisplayName','RMS envelope');
@@ -405,7 +406,7 @@ function plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
         AUDIO_BP_LOW, AUDIO_BP_HIGH, FIXED_AUDIO_THRESHOLD, numel(coll_t)));
     grid(ax_aud, 'on');
 
-    ax_niq = subplot(n_rows, 1, 2, 'Parent', hFig);
+    ax_niq = subplot(n_rows, 1, 2);%, 'Parent', hFig);
     hold(ax_niq, 'on');
     plot(ax_niq, t_ds, mag_ds, 'Color',[0.2 0.45 0.8], 'LineWidth',0.8, ...
         'DisplayName','Accel magnitude');
@@ -422,7 +423,7 @@ function plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
         ds2 = max(1, round(ACCEL_FS / 200));
         td  = t_niq(1:ds2:end);
 
-        ax_L = subplot(n_rows, 1, 3, 'Parent', hFig);
+        ax_L = subplot(n_rows, 1, 3);%, 'Parent', hFig);
         hold(ax_L, 'on');
         plot(ax_L, td, xL(1:ds2:end), 'r', 'LineWidth',0.5, 'DisplayName','X');
         plot(ax_L, td, yL(1:ds2:end), 'g', 'LineWidth',0.5, 'DisplayName','Y');
@@ -431,7 +432,7 @@ function plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
         ylabel(ax_L, 'g'); title(ax_L, 'Left sensor — X / Y / Z');
         grid(ax_L, 'on');
 
-        ax_R = subplot(n_rows, 1, 4, 'Parent', hFig);
+        ax_R = subplot(n_rows, 1, 4);%, 'Parent', hFig);
         hold(ax_R, 'on');
         plot(ax_R, td, xR(1:ds2:end), 'r', 'LineWidth',0.5, 'DisplayName','X');
         plot(ax_R, td, yR(1:ds2:end), 'g', 'LineWidth',0.5, 'DisplayName','Y');

@@ -25,7 +25,9 @@ clear; clc;
 sharks_root  = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano';  
 output_root  = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
 % CORRECT — use curly braces for cell array of strings
-SUBJECTS_TO_RUN = {'subject_s39N','subject_s40H','subject_s41H','subject_s42N','subject_s43N','subject_s44N','subject_s45H','subject_s46N','subject_s47H','subject_s48N'};
+SUBJECTS_TO_RUN = {'subject_s04H', 'subject_s05N','subject_s06H','subject_s07N','subject_s08H','subject_s09N', ...
+    'subject_s10H','subject_s11N','subject_s12H','subject_s13H','subject_s14N','subject_s15H','subject_s16N',...
+    'subject_s17H','subject_s18N','subject_s19H','subject_s20N','subject_s21H','subject_s22N','subject_s23H'};
 % NOMINAL SAMPLING RATES ----------------------------
 FS_NIDAQ = 3000;   % Hz  accelerometer + force
 FS_GSR   = 10;     % Hz  Shimmer (approximate, used as fallback)
@@ -382,7 +384,7 @@ function process_trial_folder(src, dst, FS_NIDAQ, FS_GSR)
         %AUDIO.time_unix  = audio.recording_time;
 
         audio_vars  = audio.Properties.VariableNames;
-        skip_cols = {'recording_time', 'timestamp', 'sample_index', 'samplerate'};
+        skip_cols = {'recording_time', 'timestamp', 'sample_index', 'samplerate','pc_time'};
         AUDIO.data  = [];
         AUDIO.channel_names = {};
 

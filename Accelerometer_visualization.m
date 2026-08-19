@@ -5,41 +5,47 @@
 
 clear; clc; close all;
 
-session_folder = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano/subject_s01H/level_L3/rep_05';
-%session_folder = replace(session_folder, '~', getenv('HOME'));
+session_folder = '/run/user/1001/gvfs/smb-share:server=shark,share=acatalano/subject_s03H/Baseline1/Level1';
+mat_folder = 'smb://shark/acatalano/subject_s03H/Baseline1/Level1';
 
 accel_fs = 3000;   % Hz
 bp_lo    = 80;
 bp_hi    = 1000;
 
-% ── Load ─────────────────────────────────────────────────────────────────────
+% ── Load 
 fprintf('Loading: %s\n\n', session_folder);
 
 nidaq_file  = fullfile(session_folder, 'accel.csv');
 events_file = fullfile(session_folder, 'events.csv');
+audio_file  = fullfile(session_folder, 'audio.csv');
 
 if ~isfile(nidaq_file), error('accel.csv not found in %s', session_folder); end
 nidaq = readtable(nidaq_file);
 fprintf('Loaded accel.csv: %d rows\n', height(nidaq));
 
-% ── Build tables ─────────────────────────────────────────────────────────────
+% ── Build tables 
 accel        = table();
-accel.xL     = nidaq.ai1;
-accel.yL     = nidaq.ai2;
-accel.zL     = nidaq.ai3;
-accel.xR     = nidaq.ai4;
-accel.yR     = nidaq.ai5;
-accel.zR     = nidaq.ai6;
+accel.xL     = nidaq.ai9;
+accel.yL     = nidaq.ai10;
+accel.zL     = nidaq.ai11;
+accel.xR     = nidaq.ai12;
+accel.yR     = nidaq.ai13;
+accel.zR     = nidaq.ai14;
 accel.t_pc   = nidaq.pc_time;
-%%
+%
 force        = table();
-force.F1     = nidaq.ai7  - nidaq.ai15;
+force.F1     = nidaq.ai15  - nidaq.ai15;
 force.F2     = nidaq.ai16  - nidaq.ai24;
 force.F3     = nidaq.ai17  - nidaq.ai25;
 force.F4     = nidaq.ai18 - nidaq.ai26;
 force.F5     = nidaq.ai19 - nidaq.ai27;
 force.F6     = nidaq.ai20 - nidaq.ai28;
 force.t_pc   = nidaq.pc_time;
+
+audio_csv = readtable(audio_file);
+audio=table();
+audio.xL = audio_csv.ch12; audio.yL = audio_csv.ch13; audio.zL = audio_csv.ch14;
+audio.xR = audio_csv.ch16; audio.yR = audio_csv.ch17; audio.zR = audio_csv.ch18;
 
 %% ── Time axis — defined from THIS data, never from workspace ─────────────────
 % t0 is the first timestamp IN THIS FILE.
