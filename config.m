@@ -22,7 +22,7 @@ function cfg = config()
     cfg.level_names      = {'Level1','Level2','Level3','Level4','Level5'};
     cfg.n_training_reps  = 10;
     cfg.resting_duration = 180;
-    cfg.amplitude_features = {'scl_mean','scl_range','scr_mean_amp','scr_max_amp', 'scr_auc','gsr_mean','gsr_std','gsr_rms'};
+    cfg.amplitude_features = {'scl_mean','scl_range','scl_slope','scr_mean_amp','scr_max_amp', 'scr_auc','gsr_mean','gsr_std','gsr_rms'};
 end
 function p = expanduser(p)
 if strncmp(p,'~',1)

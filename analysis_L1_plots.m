@@ -18,9 +18,7 @@ training_levels = {'levelL1','levelL2','levelL3','levelL4','levelL5'};
 n_levels = numel(training_levels);
 n_reps   = cfg.n_training_reps;   % 10
 
-%% =========================================================
-%  LOAD ALL SUBJECTS
-% =========================================================
+%% LOAD ALL SUBJECTS
 all_data       = struct();
 valid_subjects = {};
 
@@ -35,9 +33,7 @@ end
 n_subj = numel(valid_subjects);
 fprintf('Loaded %d subjects\n', n_subj);
 
-%% =========================================================
-%  BUILD FEATURE MATRICES
-% =========================================================
+%% BUILD FEATURE MATRICES
 % Baseline: [n_subj x 5_levels x n_feat]
 B1 = NaN(n_subj, 5, n_feat);
 B2 = NaN(n_subj, 5, n_feat);
@@ -89,9 +85,7 @@ col_N  = [0.8 0.3 0.2];
 
 fprintf('Group H: %d  |  Group N: %d\n', n_H, n_N);
 
-%% =========================================================
-%  Q1 — VIOLIN PLOTS: Baseline1 vs Baseline2, per level, H vs N
-% =========================================================
+%% Q1 — VIOLIN PLOTS: Baseline1 vs Baseline2, per level, H vs N
 fprintf('\nPlotting Q1...\n');
 fig_dir_q1 = fullfile(plot_dir,'Q1_Baseline');
 if ~exist(fig_dir_q1,'dir'), mkdir(fig_dir_q1); end
