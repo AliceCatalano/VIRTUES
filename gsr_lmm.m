@@ -69,7 +69,19 @@ for k = 1:numel(lh_term)
     fprintf('%-25s %-28s %10.4f %10.4f %10.4f %10.4f\n', ...
         lh_outcome{k}, lh_term{k}, lh_beta(k), lh_se(k), lh_p(k), lh_p_fdr(k));
 end
-
+% Within-group simple effects: the N group's and H group's own within-subject trajectory (repetition slope, per-level effect vs level
+% 1), each with a proper SE/p from the model's full coefficient covariance (not eyeballed by adding printed rows together). The N-vs-H
+% DIFFERENCE for each of these is exactly the primary interaction / level_haptic terms already reported above -- this table is what makes
+% "does each group show an effect on its own" an explicit, citable number rather than something read off by convention from the reference level.
+fprintf('\n=== Within-group simple effects (N and H each on their own; N-vs-H difference = interaction terms above) ===\n');
+fprintf('%-25s %-32s %-4s %10s %10s %10s %10s\n', 'Outcome', 'Effect', 'Grp', 'beta', 'SE', 'p', '95%% CI');
+for i = 1:numel(outcomes)
+    se = results{i}.simple_effects;
+    for j = 1:height(se)
+        fprintf('%-25s %-32s %-4s %10.4f %10.4f %10.4f  [%7.4f, %7.4f]\n', ...
+            outcomes{i}, se.effect{j}, se.group{j}, se.beta(j), se.se(j), se.p(j), se.lower(j), se.upper(j));
+    end
+end
 save(fullfile(cfg.output_root, 'training_lmm_results.mat'), 'results', 'outcomes', 'p_fdr', ...
     'lh_outcome', 'lh_term', 'lh_beta', 'lh_se', 'lh_p', 'lh_p_fdr');
 fprintf('\nSaved results to %s\n', fullfile(cfg.output_root, 'training_lmm_results.mat'));

@@ -23,6 +23,10 @@ function cfg = config()
     cfg.n_training_reps  = 10;
     cfg.resting_duration = 180;
     cfg.amplitude_features = {'scl_mean','scl_range','scl_slope','scr_mean_amp','scr_max_amp', 'scr_auc','gsr_mean','gsr_std','gsr_rms'};
+    % Eye-tracking (Neon). See eye_preprocess.m for what these control and why they need dataset-wide tuning via eye_check_sampling_jitter.m
+    % before trusting saccade counts at scale (same caveat as cfg.scr_sensitivity above).
+    cfg.eye_max_gap_s     = 0.2;   % dropout-gap exclusion threshold, s
+    cfg.eye_saccade_k_mad = 5;     % velocity threshold = median + k*MAD
 end
 function p = expanduser(p)
 if strncmp(p,'~',1)

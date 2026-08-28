@@ -69,8 +69,43 @@ function results = gsr_training_lmm(T, outcome)
     level_haptic_mask       = ~cellfun('isempty', regexp(fe.Name, ':haptic_num$', 'once')) & ~cellfun('isempty', regexp(fe.Name, '^level_cat', 'once'));
     results.level_haptic    = table(fe.Name(level_haptic_mask), fe.Estimate(level_haptic_mask), ...
         fe.SE(level_haptic_mask), fe.pValue(level_haptic_mask),'VariableNames', {'term','beta','se','p'});
+     % --- Within-group simple effects (the explicit within-subject trend for EACH group on its own, not just the H-vs-N difference) ---
+    % Because haptic_num=0 (N) is the reference level, the raw 'repetition' and 'level_cat_k' coefficients ARE already the N group's simple
+    % effects -- but reading a p-value straight off fe.pValue for the H group's effect (repetition + repetition:haptic_num, or level_cat_k +
+    % level_cat_k:haptic_num) is wrong unless you account for the covariance between those two coefficients, which fe.SE alone doesn't
+    % give you. This builds proper contrasts via the model's full coefficient covariance matrix (lme.CoefficientCovariance) so each
+    % group's simple effect gets a correct SE/CI/p, computed the same way for both groups rather than trusting N's printed row by convention
+    % and guessing at H's.
+    covb   = lme.CoefficientCovariance;
+    dfe    = lme.DFE;
+    nterms = numel(fe.Name);
 
+    contrast_rows = {};
+    add_contrast = @(label, group, c) local_add_contrast(fe, covb, dfe, c, label, group);
+
+    idx_rep  = strcmp(fe.Name, 'repetition');
+    idx_repH = strcmp(fe.Name, 'repetition:haptic_num');
+    c = zeros(nterms,1); c(idx_rep) = 1;
+    contrast_rows(end+1,:) = add_contrast('repetition (within-subject slope)', 'N', c);
+    c = zeros(nterms,1); c(idx_rep) = 1; c(idx_repH) = 1;
+    contrast_rows(end+1,:) = add_contrast('repetition (within-subject slope)', 'H', c);
+
+    level_names = regexp(fe.Name, '^level_cat_(\d+)$', 'tokens', 'once');
+    level_ids   = find(~cellfun(@isempty, level_names));
+    for li = level_ids(:)'
+        lvl      = level_names{li}{1};
+        idx_lvl  = false(nterms,1); idx_lvl(li) = true;
+        idx_lvlH = strcmp(fe.Name, sprintf('level_cat_%s:haptic_num', lvl));
+        c = zeros(nterms,1); c(idx_lvl) = 1;
+        contrast_rows(end+1,:) = add_contrast(sprintf('level %s vs level 1', lvl), 'N', c);
+        c = zeros(nterms,1); c(idx_lvl) = 1; c(idx_lvlH) = 1;
+        contrast_rows(end+1,:) = add_contrast(sprintf('level %s vs level 1', lvl), 'H', c);
+    end
+
+    results.simple_effects = cell2table(contrast_rows, ...
+        'VariableNames', {'effect','group','beta','se','t','df','p','lower','upper'});
 end
+
 
 function [lme, re_structure, diag] = fit_lmm_with_re_fallback(Ttr, formula_maximal, formula_reduced, outcome)
 % Fit the maximal (correlated intercept+slope) random-effects structure; fall back to an uncorrelated structure if the maximal fit is degenerate
@@ -128,4 +163,17 @@ end
 
 function out = local_ternary(cond, a, b)
     if cond, out = a; else, out = b; end
+end
+
+function row = local_add_contrast(fe, covb, dfe, c, label, group)
+% Point estimate, SE, and p-value for a linear contrast c'*beta, using the
+% model's full coefficient covariance matrix so cross-term covariance
+% (e.g. between 'repetition' and 'repetition:haptic_num') isn't dropped.
+    beta_hat = fe.Estimate;
+    est      = c' * beta_hat;
+    se       = sqrt(c' * covb * c);
+    t        = est / se;
+    p        = 2 * (1 - tcdf(abs(t), dfe));
+    crit     = tinv(0.975, dfe);
+    row      = {label, group, est, se, t, dfe, p, est - crit*se, est + crit*se};
 end
