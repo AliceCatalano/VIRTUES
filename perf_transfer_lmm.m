@@ -29,7 +29,13 @@ function results = perf_transfer_lmm(T, outcome, family, phase_type, phase_pre, 
     Tph.haptic_num  = double(Tph.haptic);
     Tph.phase_post  = double(strcmp(Tph.phase, phase_post_label));
 
-    formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+    has_level = any(isfinite(Tph.level));
+    if has_level
+        formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+            formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+        else
+            formula = sprintf('%s ~ phase_post*haptic_num + (1 | subject_cat)', outcome);
+    end
 
     lastwarn('');
     if strcmp(family, 'gaussian')

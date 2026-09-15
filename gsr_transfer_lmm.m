@@ -22,9 +22,19 @@ function results = gsr_transfer_lmm(T, outcome, phase_type, phase_pre, phase_pos
 % was deliberately left out: with only 2 phases x 5 levels per subject
 % there usually isn't enough information to identify a random Phase slope
 % on top of a random intercept, so this uses a random-intercept-only
-% structure -- if fitlme still warns about a singular fit, that's reported
-% but not silently worked around (unlike gsr_training_lmm.m, there's no
-% simpler alternative to a random intercept alone).
+% structure. There is no simpler alternative to a random intercept alone,
+% so a degenerate fit here can't be worked around the way
+% gsr_training_lmm.m's RE fallback does -- but it IS explicitly checked
+% for and flagged (results.re_degenerate), not just left to a fitlme
+% warning. Confirmed necessary in practice: the duration_s and pupil_slope
+% Baseline1-vs-Baseline2 models both hit a random-intercept variance of
+% ~1e-15/1e-18 (a boundary solution -- essentially no detectable
+% between-subject variance left once level and phase are already fixed
+% effects) with NO warning raised by fitlme either time. Fixed-effect
+% inference from a degenerate-intercept fit is usually still informative
+% (this is a single collapsed variance component, not the
+% correlation-boundary problem gsr_training_lmm.m's fallback addresses),
+% but treat SEs from a flagged fit with extra caution.
 %
 % The Phase x Haptic interaction is the target: for the baseline family it
 % is "superior transfer in the haptic feedback group" (SAP 4.3) if
@@ -46,7 +56,13 @@ function results = gsr_transfer_lmm(T, outcome, phase_type, phase_pre, phase_pos
     Tph.haptic_num  = double(Tph.haptic);
     Tph.phase_post  = double(strcmp(Tph.phase, phase_post_label));   % 0=pre, 1=post
 
-    formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+    has_level = any(isfinite(Tph.level));
+    if has_level
+        formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+            formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
+        else
+            formula = sprintf('%s ~ phase_post*haptic_num + (1 | subject_cat)', outcome);
+    end
 
     lastwarn('');
     lme = fitlme(Tph, formula, 'FitMethod', 'REML');
@@ -54,7 +70,8 @@ function results = gsr_transfer_lmm(T, outcome, phase_type, phase_pre, phase_pos
     if ~isempty(warn_msg)
         fprintf('  [%s, %s vs %s] fitlme warning: %s -- inspect this fit before trusting it\n', ...
             outcome, phase_pre, phase_post_label, warn_msg);
-    end 
+    end
+
     % Explicit boundary check -- don't rely on fitlme raising a warning:
     % it did NOT for either real degenerate case seen so far (see header).
     psi = covarianceParameters(lme);

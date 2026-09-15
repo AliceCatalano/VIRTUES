@@ -29,11 +29,11 @@ SHOW_RAW_CH          = true;       % show individual X/Y/Z subplots
 % --- Audio detection ---
 AUDIO_BP_LOW         = 80;         % Hz
 AUDIO_BP_HIGH        = 1000;       % Hz
-AUDIO_RMS_WIN_SEC    = 0.02;       % RMS envelope window (s)
+AUDIO_RMS_WIN_SEC    = 0.02;       % no longer used for detection (RMS envelope step removed -- see audio_side_abs_sum); kept only as a provenance field in results.params
 PEAK_MIN_DIST_SEC    = 1;        % minimum gap between detections (s)
 
 %% >>> NEW — validated fixed threshold (replaces adaptive mean-based one)
-FIXED_AUDIO_THRESHOLD = 0.2;     % absolute amplitude threshold, same for all subjects
+FIXED_AUDIO_THRESHOLD = 0.03;     % absolute amplitude threshold, same for all subjects
 
 %% >>> NEW — review-trigger range
 REVIEW_LOW_N  = 2;      % review if n_collisions < this
@@ -49,9 +49,13 @@ YLIM_AUDIO           = [];
 %% SECTION 2 — ASK USER FOR SUBJECT + PHASE
 base = expanduser(BASE_FOLDER);
 
-SUBJECT = 's40H';
+SUBJECT = 's07N';
 
-validPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
+% Test1/Test2 (Peg Transfer) included here, but see SECTION 3 -- unlike
+% Baseline/training, they are a single continuous acquisition with no
+% Level/rep subfolder, so they need their own branch there, not just a
+% listing here.
+validPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5', 'Test1', 'Test2'};
 fprintf('\nValid phases: %s\n', strjoin(validPhases, ', '));
 PHASE = input('Enter phase to analyse: ', 's');
 
@@ -64,8 +68,18 @@ phase_folder = fullfile(subj_folder, PHASE);
 assert(isfolder(phase_folder), 'Phase folder not found:\n  %s', phase_folder);
 
 %% SECTION 3 — DETERMINE ACQUISITION LIST AUTOMATICALLY
+% Test1/Test2 (Peg Transfer): a single continuous, unleveled task --
+% sensor files sit directly in the phase folder, no Level/rep subfolder,
+% same convention perf_extract_features.m/perf_extract_force_vibration_
+% features.m already use for it. Previously PHASE='Test1' fell into the
+% "else" branch below and generated rep_01..rep_10, none of which exist
+% for Test1/Test2, so every "acquisition" was skipped as a missing
+% folder and nothing was ever actually detected or plotted.
+is_test_phase = startsWith(PHASE, 'Test', 'IgnoreCase', true);
 if startsWith(PHASE, 'Baseline', 'IgnoreCase', true)
     acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:5, 'UniformOutput', false);
+elseif is_test_phase
+    acquisitions = {'main'};
 else
     acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:10, 'UniformOutput', false);
 end
@@ -84,14 +98,18 @@ summary = struct('acquisition', {}, 'n_collisions', {}, 'reviewed', {});
 for aIdx = 1:numel(acquisitions)
 
     ACQUISITION = acquisitions{aIdx};
-    acq_folder  = fullfile(phase_folder, ACQUISITION);
-
-    if ~isfolder(acq_folder)
-        if isfolder([acq_folder '_R'])
-            acq_folder = [acq_folder '_R'];
-        else
-            warning('Skipping missing acquisition folder:\n  %s', acq_folder);
-            continue;
+    if is_test_phase
+        acq_folder = phase_folder;
+        ACQUISITION = 'main';
+    else
+        acq_folder = fullfile(phase_folder, ACQUISITION);
+        if ~isfolder(acq_folder)
+            if isfolder([acq_folder '_R'])
+                acq_folder = [acq_folder '_R'];
+            else
+                warning('Skipping missing acquisition folder:\n  %s', acq_folder);
+                continue;
+            end
         end
     end
 
@@ -110,7 +128,6 @@ for aIdx = 1:numel(acquisitions)
     %% LOAD .mat FILES
     A = load(accel_file);   ACCEL  = A.ACCEL;
     U = load(audio_file);   AUDIO  = U.AUDIO;
-    E = load(events_file);  EVENTS = E.EVENTS;
 
     %% EXTRACT SIGNALS — accelerometer
     t_niq      = ACCEL.time_rel;
@@ -139,26 +156,32 @@ for aIdx = 1:numel(acquisitions)
     fs_audio = AUDIO.fs_estimated;
     ch_names = AUDIO.channel_names;
 
-    known_new = {'ch11','ch12','ch13','ch14','ch16','ch17'};
-    known_old = {'ch12','ch13','ch14','ch16','ch17','ch18'};
-    idx_new   = find(ismember(ch_names, known_new));
-    idx_old   = find(ismember(ch_names, known_old));
-    if numel(idx_new) >= numel(idx_old)
-        audio_ch_idx = idx_new;
-    else
-        audio_ch_idx = idx_old;
-    end
-    if isempty(audio_ch_idx)
-        audio_ch_idx = 1:size(AUDIO.data, 2);
-    end
-
-    audio_raw = AUDIO.data(:, audio_ch_idx);
-    audio_bp  = bandpass_channels(audio_raw, fs_audio, AUDIO_BP_LOW, AUDIO_BP_HIGH);
-    env       = rms_envelope(audio_bp, fs_audio, AUDIO_RMS_WIN_SEC);
+    % Per-side bandpassed sum (xbp+ybp+zbp per side, no rectification, no
+    % RMS envelope, max of the two sides) -- matches
+    % Accelerometer_visualization.m's validated sumbp exactly, replacing
+    % the previous max(abs(.)) across all 6 raw channels + RMS-envelope
+    % pipeline, which gave a structurally larger/noisier signal than the
+    % raw bandpassed trace this was meant to threshold (see
+    % audio_side_abs_sum's header).
+    audio_bp = audio_side_abs_sum(AUDIO, ch_names, AUDIO_BP_LOW, AUDIO_BP_HIGH, fs_audio);
+    env = audio_bp;   % detection now runs directly on the bandpassed signal, not a separate envelope
+    fprintf('Audio signal (new, per-side abs-sum) range this acquisition: min=%.5f max=%.5f mean=%.5f median=%.5f\n', ...
+        min(audio_bp), max(audio_bp), mean(audio_bp,'omitnan'), median(audio_bp,'omitnan'));
+    fprintf('  --> FIXED_AUDIO_THRESHOLD=%.4f was calibrated against the OLD signal -- re-check it against the range above.\n', FIXED_AUDIO_THRESHOLD);
 
     %% TRIAL WINDOW
-    t_ws = EVENTS.t_trial_start;
-    t_we = EVENTS.t_trial_end;
+    % Uses safe_trial_window.m (the same TRIAL_START/TRIAL_END/spacebar
+    % parser every other script in this pipeline uses) instead of reading
+    % EVENTS.t_trial_start/t_trial_end, fields that don't match the
+    % events.mat schema convert2mat.m actually saves. This also means
+    % Test1/Test2 need relabel_test_events.m run first, same as
+    % everywhere else Peg Transfer is processed -- its raw events.csv
+    % used the spacebar key inconsistently.
+    [t_ws, t_we] = safe_trial_window(events_file);
+    if isnan(t_ws) || isnan(t_we)
+        fprintf('  [skip] %s — no usable trial window from events.mat\n', ACQUISITION);
+        continue;
+    end
     fprintf('Trial window : %.3f – %.3f s  (%.1f s)\n', t_ws, t_we, t_we - t_ws);
 
     %% restore trial-window slicing (was accidentally commented out)
@@ -191,7 +214,7 @@ for aIdx = 1:numel(acquisitions)
         end
         
         % ---- AUTO-DETECT (adaptive threshold, no plot, no prompt) ----
-        thresh = 6 * mean(env_trial, 'omitnan');
+        thresh =0.02;
         
         [~, locs] = findpeaks(env_trial, t_trial, 'MinPeakDistance', PEAK_MIN_DIST_SEC, 'MinPeakHeight', thresh);
     % 
@@ -209,7 +232,10 @@ for aIdx = 1:numel(acquisitions)
     [intens_g, intens_audio] = compute_intensity(coll_t, mag_ds, t_ds, audio_bp, t_aud,INTENSITY_WIN_SEC, TARGET_FS, fs_audio);
 
     %% DECIDE WHETHER THIS ACQUISITION NEEDS REVIEW
-    needs_review = 0;%(n_coll < REVIEW_LOW_N) || (n_coll > REVIEW_HIGH_N);
+    % Was hardcoded to 0 (always "no review needed"), so an outlier count
+    % would auto-accept silently instead of stopping for a look. Restored
+    % to the actual range check.
+    needs_review = (n_coll < REVIEW_LOW_N) || (n_coll > REVIEW_HIGH_N);
 
     if ~needs_review
         
@@ -395,8 +421,10 @@ function plot_collision_figure(hFig, coll_t, intens_g, intens_audio, ...
 
     ax_aud = subplot(n_rows, 1, 1);%)%, 'Parent', hFig);
     hold(ax_aud, 'on');
-    plot(ax_aud, t_aud, audio_bp, 'Color',[0.5 0.5 0.5 0.35], 'LineWidth',0.4, 'DisplayName','bandpassed max');
-    plot(ax_aud, t_aud, env, 'r', 'LineWidth',1.6, 'DisplayName','RMS envelope');
+    % audio_bp / env are now the same signal (per-side abs bandpassed sum,
+    % max of the two sides -- see audio_side_abs_sum) -- one trace, not the
+    % old bandpassed-vs-RMS-envelope pair.
+    plot(ax_aud, t_aud, audio_bp, 'Color',[0.6 0.1 0.1], 'LineWidth',0.8, 'DisplayName','max(|sum L|, |sum R|), bandpassed');
     yline(ax_aud, thresh, 'k--', 'LineWidth',1.0, 'HandleVisibility','off');
     draw_window(ax_aud, t_ws, t_we);
     draw_collisions(ax_aud, coll_t, env, t_aud, intens_g, intens_audio, 'audio');
@@ -466,21 +494,38 @@ function ch = baseline_and_scale(raw, n_base, V2G)
     ch   = (raw - mean(raw(1:n_bl))) * V2G;
 end
 
-function out = bandpass_channels(mat, fs, flo, fhi)
-    out = zeros(size(mat,1), 1);
-    for k = 1:size(mat,2)
-        col = double(mat(:,k));
-        col = col - mean(col, 'omitnan');
-        if numel(col) > 10*fs
-            col = bandpass(col, [flo fhi], fs);
-        end
-        out = max(out, abs(col));
+function sig = audio_side_abs_sum(AUDIO, ch_names, bp_lo, bp_hi, fs)
+% Reproduces Accelerometer_visualization.m's validated sumbp = xbp+ybp+zbp
+% exactly, per side (Left: x/y/z summed after individually bandpassing;
+% Right: same), then combines the two sides by taking whichever side has
+% the larger |sum| at each instant. No rectification before the per-axis
+% sum (matches the diagnostic script, which never takes abs()), and no
+% RMS-envelope smoothing -- detection runs on this raw bandpassed
+% quantity directly, not an energy-smoothed derivative of it.
+%
+% Both known audiomixer channel-naming schemes are handled explicitly
+% (unlike the old ismember-based selection, which pooled up to 6 matching
+% channels with no guaranteed L/R or x/y/z identity by column position --
+% harmless when everything just went through max(abs(.)) regardless of
+% identity, but wrong here, where knowing which 3 channels are Left and
+% which 3 are Right is required to sum them per side correctly).
+    scheme_old = {'ch12','ch13','ch14','ch16','ch17','ch18'};   % L: ch12/13/14 | R: ch16/17/18
+    scheme_new = {'ch11','ch12','ch13','ch14','ch16','ch17'};   % L: ch11/12/13 | R: ch14/16/17
+    if all(ismember(scheme_old, ch_names))
+        L_names = scheme_old(1:3); R_names = scheme_old(4:6);
+    elseif all(ismember(scheme_new, ch_names))
+        L_names = scheme_new(1:3); R_names = scheme_new(4:6);
+    else
+        error('audio_side_abs_sum: neither known audiomixer channel scheme found in: %s', strjoin(ch_names, ', '));
     end
-end
 
-function env = rms_envelope(sig, fs, win_sec)
-    win = max(3, round(fs * win_sec));
-    env = sqrt(movmean(sig.^2, win));
+    get_ch = @(name) double(AUDIO.data(:, find(strcmp(ch_names, name), 1)));
+    bp     = @(x) bandpass(x - mean(x, 'omitnan'), [bp_lo bp_hi], fs);
+
+    sum_L = bp(get_ch(L_names{1})) + bp(get_ch(L_names{2})) + bp(get_ch(L_names{3}));
+    sum_R = bp(get_ch(R_names{1})) + bp(get_ch(R_names{2})) + bp(get_ch(R_names{3}));
+
+    sig = max(abs(sum_L), abs(sum_R));
 end
 
 function [sd, td] = aa_downsample(sig, t, fi, ~, ord, ds)

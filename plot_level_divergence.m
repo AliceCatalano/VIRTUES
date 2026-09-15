@@ -56,6 +56,8 @@ function plot_level_divergence(cfg)
             se = se(is_level, :);
             lvl_num = cellfun(@(s) sscanf(s, 'level %d vs level 1'), se.effect);
 
+            n_sig = 0;
+
             for grp = {'N','H'}
                 g    = grp{1};
                 mask = strcmp(se.group, g);
@@ -64,15 +66,23 @@ function plot_level_divergence(cfg)
                 y    = se.beta(mask); y = y(ord);
                 lo   = se.lower(mask); lo = lo(ord);
                 hi   = se.upper(mask); hi = hi(ord);
+                pv   = se.p(mask);     pv = pv(ord);
                 col  = local_ternary(strcmp(g,'H'), COLOR_H, COLOR_N);
                 lbl  = local_ternary(strcmp(g,'H'), 'HF', 'NHF');
-                errorbar(x, y, y-lo, hi-y, '-o', 'Color', col, 'LineWidth', 1.6, ...
-                    'MarkerFaceColor', col, 'DisplayName', lbl);
+                errorbar(x, y, y-lo, hi-y, '-', 'Color', col, 'LineWidth', 1.6, 'CapSize', 4, 'DisplayName', lbl);
+                is_sig = pv < 0.05;
+                n_sig = n_sig + sum(is_sig);
+                if any(is_sig)
+                    scatter(x(is_sig), y(is_sig), 55, col, 'filled', 'HandleVisibility', 'off');
+                end
+                if any(~is_sig)
+                    scatter(x(~is_sig), y(~is_sig), 55, col, 'HandleVisibility', 'off');
+                end
             end
             yline(0, ':k', 'HandleVisibility', 'off');
             xlabel('Level (vs. 1)'); ylabel('\beta (within-group)');
             xlim([1.5 5.5]); xticks(2:5);
-            title(outcome_labels{k}, 'FontSize', 10);
+            title(sprintf('%s\n%d/8 level\\times group contrasts p<.05 (filled)', outcome_labels{k}, n_sig), 'FontSize', 9, 'Interpreter', 'tex');
             if plot_idx == 1 || plot_idx == 5
                 legend('Location', 'best', 'FontSize', 8);
             end

@@ -27,6 +27,10 @@ function cfg = config()
     % before trusting saccade counts at scale (same caveat as cfg.scr_sensitivity above).
     cfg.eye_max_gap_s     = 0.2;   % dropout-gap exclusion threshold, s
     cfg.eye_saccade_k_mad = 5;     % velocity threshold = median + k*MAD
+    cfg.nidaq_fs = 3000;   % Hz, force + accelerometer sampling rate
+    cfg.force_noise_k_mad = 2.5;
+    cfg.tssv_noise_threshold_ms2    = 0.21;   % m/s^2, per the TSSV method being followed
+    cfg.accel_sensitivity_ms2_per_V = 0.4;
 end
 function p = expanduser(p)
 if strncmp(p,'~',1)

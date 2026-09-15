@@ -65,7 +65,7 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
     diary on;
     
     % SECTION 3 — LOOP THROUGH ALL PHASES AUTOMATICALLY
-    allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
+    allPhases = {'Test1','Test2','Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
     
     fprintf('\n=== CollisionDetection_Local — FULL AUTO MODE ===\n');
     fprintf('Subject : %s\n', SUBJECT);
@@ -85,9 +85,11 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
           
         fprintf(' PHASE: %s\n', PHASE);
         
-    
+        is_test_phase = startsWith(PHASE, 'Test', 'IgnoreCase', true);
         if startsWith(PHASE, 'Baseline', 'IgnoreCase', true)
             acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:5, 'UniformOutput', false);
+        elseif is_test_phase
+            acquisitions = {'.'};
         else
             acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:10, 'UniformOutput', false);
         end
@@ -97,14 +99,19 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
         for aIdx = 1:numel(acquisitions)
     
             ACQUISITION = acquisitions{aIdx};
-            acq_folder  = fullfile(phase_folder, ACQUISITION);
-    
-            if ~isfolder(acq_folder)
-                if isfolder([acq_folder '_R'])
-                    acq_folder = [acq_folder '_R'];
-                else
-                    fprintf('  [skip] %s — folder not found\n', ACQUISITION);
-                    continue;
+            if is_test_phase
+                acq_folder = phase_folder;
+                ACQUISITION = 'main';
+            else
+                acq_folder  = fullfile(phase_folder, ACQUISITION);
+        
+                if ~isfolder(acq_folder)
+                    if isfolder([acq_folder '_R'])
+                        acq_folder = [acq_folder '_R'];
+                    else
+                        fprintf('  [skip] %s — folder not found\n', ACQUISITION);
+                        continue;
+                    end
                 end
             end
     
@@ -166,8 +173,11 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
             env       = rms_envelope(audio_bp, fs_audio, AUDIO_RMS_WIN_SEC);
     
             % ---- TRIAL WINDOW ----
-            t_ws = EVENTS.t_trial_start;
-            t_we = EVENTS.t_trial_end;
+            [t_ws, t_we] = safe_trial_window(events_file);
+            if isnan(t_ws) || isnan(t_we)
+                fprintf('  [skip] %s — no usable trial window from events.mat\n', ACQUISITION);
+                continue;
+            end
     
             in_trial    = (t_aud >= t_ws) & (t_aud <= t_we);
             audio_trial = audio_bp(in_trial);
@@ -197,7 +207,7 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
             end
             
             % ---- AUTO-DETECT (adaptive threshold, no plot, no prompt) ----
-            thresh = 0.0039;
+            thresh = 0.015;
             trial_span = t_trial(end) - t_trial(1);
             if trial_span <= PEAK_MIN_DIST_SEC
                 fprintf(['  [SKIP-BAD-AUDIO] %s — trial audio span too short (%.4fs) after removing ' ...
@@ -272,7 +282,7 @@ d = dir(fullfile(base, 'subject_*'));
 SUBJECTS = {d([d.isdir]).name};
 fprintf('Found %d subjects.\n', numel(SUBJECTS));
 
-allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
+allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5','Test1','Test2'};
 
 % ── BUILD SESSION LABEL LIST (fixed column order for heatmap) ────────────
 session_labels = {};
@@ -284,6 +294,9 @@ for pIdx = 1:numel(allPhases)
             session_labels{end+1} = sprintf('%s_L%d', PHASE, lv); %#ok<AGROW>
             session_phase{end+1}  = PHASE; %#ok<AGROW>
         end
+    elseif startsWith(PHASE, 'Test', 'IgnoreCase', true)
+        session_labels{end+1} = sprintf('%s_main', PHASE); %#ok<AGROW>
+        session_phase{end+1}  = PHASE; %#ok<AGROW>
     else
         for rep = 1:10
             session_labels{end+1} = sprintf('%s_r%02d', PHASE, rep); %#ok<AGROW>
@@ -309,19 +322,27 @@ for si = 1:nSubj
         PHASE = allPhases{pIdx};
         phase_folder = fullfile(subj_folder, PHASE);
         if ~isfolder(phase_folder), continue; end
+        is_test_phase = startsWith(PHASE, 'Test', 'IgnoreCase', true);
 
         if startsWith(PHASE, 'Baseline', 'IgnoreCase', true)
             acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:5, 'UniformOutput', false);
-            col_offset   = find(strcmp(session_phase, PHASE), 1, 'first') - 1;
+            %col_offset   = find(strcmp(session_phase, PHASE), 1, 'first') - 1;
+        elseif is_test_phase
+            acquisitions = {'main'};
         else
             acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:10, 'UniformOutput', false);
-            col_offset   = find(strcmp(session_phase, PHASE), 1, 'first') - 1;
+            %col_offset   = find(strcmp(session_phase, PHASE), 1, 'first') - 1;
         end
+        col_offset = find(strcmp(session_phase, PHASE), 1, 'first') - 1;
 
         for aIdx = 1:numel(acquisitions)
             ACQUISITION = acquisitions{aIdx};
-            acq_folder  = fullfile(phase_folder, ACQUISITION);
-            if ~isfolder(acq_folder)
+            if is_test_phase
+                acq_folder = phase_folder;
+            else
+                acq_folder  = fullfile(phase_folder, ACQUISITION);
+            end
+            if ~is_test_phase && ~isfolder(acq_folder)
                 if isfolder([acq_folder '_R']), acq_folder = [acq_folder '_R']; end
             end
 

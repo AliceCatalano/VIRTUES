@@ -22,25 +22,24 @@ function plot_transfer_curves(cfg)
     end
     Teda  = load(eda_file,  'T'); Teda  = Teda.T;
     Tperf = load(perf_file, 'T'); Tperf = Tperf.T;
+    stat_sources = struct('gsr',  local_load_stats(cfg, 'transfer_lmm_results.mat'), ...
+        'eye',  local_load_stats(cfg, 'eye_transfer_lmm_results.mat'), 'perf', local_load_stats(cfg, 'performance_transfer_lmm_results.mat'));
 
-    families = {
-        'baseline', 'Baseline1', 'Baseline2', 'Elastic task (SAP 4.3 / H2)'
-        'test',     'Test1',     'Test2',     'Peg Transfer (carry-over control)'
-        };
+    families = { 'baseline', 'Baseline1', 'Baseline2', 'Elastic task (SAP 4.3 / H2)','baseline_transfer_elastic'
+        'test',     'Test1',     'Test2',     'Peg Transfer (carry-over control)', 'test_transfer_pegtransfer'};
 
-    outcomes = {
-        'scl_mean',      'Mean SCL (uS)',       Teda
-        'scr_freq',       'SCR frequency',       Teda
+    outcomes = {'scl_mean',      'Mean SCL (uS)',Teda
+        'scr_freq',       'SCR frequency', Teda
         'scr_mean_amp',   'Mean SCR amplitude',  Teda
         'duration_s',     'Completion time (s)', Tperf
-        'n_collisions',   'Collisions (count)',  Tperf
-        };
+        'n_collisions',   'Collisions (count)',  Tperf };
 
     for f = 1:size(families, 1)
         phase_type  = families{f,1};
         phase_pre   = families{f,2};
         phase_post  = families{f,3};
         fam_title   = families{f,4};
+        fam_field   = families{f,5};
 
         fig = figure('Name', sprintf('Transfer: %s', fam_title), 'Position', [50 50 1500 350]);
         sgtitle(sprintf('%s -- %s vs %s (raw group means \\pm SEM)', fam_title, phase_pre, phase_post), ...
@@ -83,7 +82,16 @@ function plot_transfer_curves(cfg)
                     'MarkerFaceColor', col, 'MarkerSize', 7, 'DisplayName', lbl);
             end
             xlim([0.5 2.5]); xticks([1 2]); xticklabels({phase_pre, phase_post});
-            ylabel(ylab); title(ylab, 'FontSize', 10);
+            ylabel(ylab);
+            p_fdr = local_get_pfdr(stat_sources, outcome, fam_field);
+            if isnan(p_fdr)
+                sig_str = 'stats pending';
+            elseif p_fdr < 0.05
+                sig_str = sprintf('p_{FDR}=%.4f *', p_fdr);
+            else
+                sig_str = sprintf('p_{FDR}=%.3f n.s.', p_fdr);
+            end
+            title(sprintf('%s\n%s', ylab, sig_str), 'FontSize', 9, 'Interpreter', 'tex');
             if oi == 1, legend('Location', 'best', 'FontSize', 8); end
             grid on;
         end
@@ -101,4 +109,32 @@ end
 
 function out = local_ternary(cond, a, b)
     if cond, out = a; else, out = b; end
+end
+function all_results = local_load_stats(cfg, filename)
+    path = fullfile(cfg.output_root, filename);
+    if ~isfile(path)
+        all_results = [];
+        return;
+    end
+    loaded = load(path, 'all_results');
+    all_results = loaded.all_results;
+end
+
+function p_fdr = local_get_pfdr(stat_sources, outcome, fam_field)
+    p_fdr = NaN;
+    src_field = '';
+    if ismember(outcome, {'scl_mean','scr_freq','scr_mean_amp','collision_scr_amp_mean'})
+        src_field = 'gsr';
+    elseif ismember(outcome, {'pupil_mean','pupil_slope','gaze_dispersion','saccade_rate','collision_pupil_response_mean'})
+        src_field = 'eye';
+    elseif ismember(outcome, {'duration_s','n_collisions'})
+        src_field = 'perf';
+    end
+    if isempty(src_field), return; end
+    all_results = stat_sources.(src_field);
+    if isempty(all_results) || ~isfield(all_results, fam_field), return; end
+    fam = all_results.(fam_field);
+    idx = find(strcmp(fam.outcomes, outcome), 1);
+    if isempty(idx), return; end
+    p_fdr = fam.p_fdr(idx);
 end

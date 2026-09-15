@@ -1,4 +1,4 @@
-function results = gsr_training_lmm(T, outcome)
+function results = gsr_training_lmm(T, outcome, covariate_cols)
 % FIT_TRAINING_LMM  Fit the primary training-phase model from SAP Section 4.2:
 %
 %   Y ~ Haptic*Level + Haptic*Repetition + (1 + Repetition | Subject)
@@ -17,9 +17,13 @@ function results = gsr_training_lmm(T, outcome)
 % join it onto T by 'subject' and add covariate terms to the formula below
 % before treating this as the final confirmatory model -- as written here
 % it implements the 4.2 formula literally, without covariates.
-
+    
+    if nargin < 3, covariate_cols = {}; end
     Ttr = T(strcmp(T.phase_type, 'training'), :);
     Ttr = Ttr(isfinite(Ttr.(outcome)), :);
+    for c = covariate_cols
+        Ttr = Ttr(~ismissing(Ttr.(c{1})), :);
+    end
 
     if height(Ttr) < 10
         warning('fit_training_lmm: only %d usable rows for %s -- model may not be reliable', ...
@@ -32,6 +36,9 @@ function results = gsr_training_lmm(T, outcome)
     Ttr.repetition  = double(Ttr.repetition);
 
     fe_terms = 'haptic_num*level_cat + haptic_num*repetition';
+    if ~isempty(covariate_cols)
+        fe_terms = [fe_terms, ' + ', strjoin(covariate_cols, ' + ')];
+    end
     formula_maximal = sprintf('%s ~ %s + (1 + repetition | subject_cat)', outcome, fe_terms);
     formula_reduced = sprintf('%s ~ %s + (1 | subject_cat) + (repetition - 1 | subject_cat)', outcome, fe_terms);
 

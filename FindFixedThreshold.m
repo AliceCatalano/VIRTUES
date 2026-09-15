@@ -1,15 +1,43 @@
 %% FindFixedThreshold.m
-%  Scans all subject folders for existing collision_results.mat files, harvests the adaptive threshold used in each acquisition, plots how
-%  it varies across subjects/phases, then VALIDATES a set of candidate fixed thresholds by reprocessing the audio envelope for every
-%  acquisition and comparing the resulting collision counts against the already-saved (adaptive-threshold-based) counts.
+%  Finds the best single FIXED audio threshold to use across ALL subjects
+%  and phases for collision detection, using the per-side bandpassed-sum
+%  signal (audio_side_abs_sum -- matches Accelerometer_visualization.m's
+%  validated sumbp exactly, no RMS envelope) rather than the old
+%  max(abs(.))-across-6-channels + RMS-envelope signal this script
+%  originally validated against.
+%
+%  WHY THE OLD METHODOLOGY COULDN'T JUST BE REPOINTED AT THE NEW SIGNAL:
+%  the previous version harvested the adaptive threshold each existing
+%  collision_results.mat was detected with, then picked whichever
+%  candidate fixed threshold best REPRODUCED those already-saved counts.
+%  Those saved counts came from the old, structurally inflated envelope
+%  signal -- validating a new threshold against them would just calibrate
+%  it back toward the discredited signal's answer, not the new one's.
+%  There is no trustworthy "ground truth" count to compare against here.
+%
+%  INSTEAD, THIS VERSION VALIDATES BY SELF-CONSISTENCY ON THE NEW SIGNAL:
+%  for each candidate fixed threshold, across every subject/phase/
+%  acquisition in the dataset, it checks (a) what fraction of
+%  acquisitions land inside your own trusted range [REVIEW_LOW_N,
+%  REVIEW_HIGH_N], and (b) how consistent the per-subject median count is
+%  across subjects (low spread = a fixed threshold that behaves the same
+%  way for everyone, not one that only works for some subjects). Neither
+%  of those requires assuming any prior run's counts were correct.
+%
+%  Candidate thresholds are drawn from percentiles of the NEW signal's own
+%  pooled sample distribution across the whole dataset (a real collision
+%  should be a rare, large excursion relative to typical background,
+%  the same data-driven-noise-floor idea already used elsewhere in this
+%  pipeline, e.g. cfg.scr_sensitivity).
 %
 %  OUTPUT:
-%    - FixedThresholdAnalysis_<timestamp>.txt   (full text report, saved in BASE_FOLDER via diary)
-%    - Figures (not saved to disk by default — set SAVE_FIGS = true to export them as PNG into BASE_FOLDER)
+%    - FixedThresholdAnalysis.txt   (full text report, via diary)
+%    - FixedThresholdAnalysis.mat   (all harvested/validation tables + recommendation)
+%    - Figures (PNG in BASE_FOLDER if SAVE_FIGS = true)
 %
-%  WORKFLOW:
-%    1. Edit SUBJECTS_TO_RUN (or leave empty to auto-discover all "subject_*" folders under BASE_FOLDER).
-%    2. Run. No prompts, fully automatic.
+%  WORKFLOW: edit SUBJECTS_TO_RUN (or leave empty to auto-discover), run.
+%  No prompts, fully automatic -- this reprocesses raw audio for every
+%  acquisition in the dataset, so it will take a while.
 
 clear; clc; close all;
 
@@ -17,11 +45,26 @@ clear; clc; close all;
 BASE_FOLDER = '/home/acatalano/Desktop/Virtues_Data';
 
 SUBJECTS_TO_RUN = {};   % leave empty -> auto-discover ALL subject_* folders
-                       
-allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5'};
 
-PEAK_MIN_DIST_SEC = 1;     % must match whatever your detection script used
-SAVE_FIGS         = true; % export figures as PNG into BASE_FOLDER
+% Test1/Test2 (Peg Transfer) included -- single continuous acquisition,
+% no Level/rep subfolder, handled explicitly in the sweep loop below.
+allPhases = {'Baseline1','Baseline2','level_L1','level_L2','level_L3','level_L4','level_L5','Test1','Test2'};
+
+AUDIO_BP_LOW      = 80;    % Hz
+AUDIO_BP_HIGH     = 1000;  % Hz
+PEAK_MIN_DIST_SEC = 1;     % must match whatever your detection script uses
+
+REVIEW_LOW_N  = 2;    % your own trusted-range bounds (must match the detection scripts)
+REVIEW_HIGH_N = 10;
+
+% Candidate thresholds: percentiles of the pooled per-sample signal
+% across the WHOLE dataset (computed in Section 1), not percentiles of
+% any prior run's adaptive threshold -- there is no adaptive threshold
+% concept left once collisions are peaks on a raw bandpassed signal
+% rather than a smoothed envelope.
+CANDIDATE_PERCENTILES = [90 95 97 98 99 99.5 99.9];
+
+SAVE_FIGS = true;
 
 base = BASE_FOLDER;
 
@@ -30,361 +73,285 @@ if isempty(SUBJECTS_TO_RUN)
     SUBJECTS_TO_RUN = {d([d.isdir]).name};
 end
 
-
-report_file = fullfile(base,'FixedThresholdAnalysis.txt');
+report_file = fullfile(base, 'FixedThresholdAnalysis.txt');
 if strcmp(get(0,'Diary'), 'on'), diary off; end
 diary(report_file);
 diary on;
 
 fprintf('Subjects found (%d): %s\n\n', numel(SUBJECTS_TO_RUN), strjoin(SUBJECTS_TO_RUN, ', '));
 
-%% SECTION 1 — HARVEST EXISTING THRESHOLDS 
-rows = {};   % subject, phase, acquisition, threshold, n_collisions, duration, acq_folder
+%% SECTION 1 — COMPUTE THE NEW SIGNAL FOR EVERY ACQUISITION (once, cached)
+% Loads audio ONCE per acquisition, computes the per-side bandpassed-sum
+% signal ONCE, and pools every sample from every acquisition into one big
+% vector to derive candidate thresholds from -- then a cheap findpeaks
+% sweep per candidate reuses the cached per-acquisition signal.
+
+acqCache = struct('subject', {}, 'phase', {}, 'acquisition', {}, 'acq_folder', {}, ...
+    't_trial', {}, 'sig_trial', {});
+pooled_samples = [];   % subsampled pool across all acquisitions, for percentile candidates
 
 for subjIdx = 1:numel(SUBJECTS_TO_RUN)
-
     subjFolderName = SUBJECTS_TO_RUN{subjIdx};
     SUBJECT = erase(subjFolderName, 'subject_');
     subj_folder = fullfile(base, subjFolderName);
-
     if ~isfolder(subj_folder), continue; end
 
     for pIdx = 1:numel(allPhases)
-
         PHASE = allPhases{pIdx};
         phase_folder = fullfile(subj_folder, PHASE);
         if ~isfolder(phase_folder), continue; end
 
+        is_test_phase = startsWith(PHASE, 'Test', 'IgnoreCase', true);
         if startsWith(PHASE, 'Baseline', 'IgnoreCase', true)
             acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:5, 'UniformOutput', false);
+        elseif is_test_phase
+            acquisitions = {'main'};
         else
             acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:10, 'UniformOutput', false);
         end
 
         for aIdx = 1:numel(acquisitions)
-
             ACQUISITION = acquisitions{aIdx};
-            acq_folder  = fullfile(phase_folder, ACQUISITION);
-
-            if ~isfolder(acq_folder)
-                continue;   % no _R / _X fallback — skip if base folder doesn't exist
+            if is_test_phase
+                acq_folder = phase_folder;
+            else
+                acq_folder = fullfile(phase_folder, ACQUISITION);
+                if ~isfolder(acq_folder)
+                    if isfolder([acq_folder '_R'])
+                        acq_folder = [acq_folder '_R'];
+                    else
+                        continue;
+                    end
+                end
             end
 
-            collision_file = fullfile(acq_folder, 'collision_results.mat');
-            if ~isfile(collision_file), continue; end
+            audio_file  = fullfile(acq_folder, 'audio.mat');
+            events_file = fullfile(acq_folder, 'events.mat');
+            if ~isfile(audio_file) || ~isfile(events_file), continue; end
 
             try
-                R = load(collision_file, 'results');
-                res = R.results;
+                U = load(audio_file); AUDIO = U.AUDIO;
+                t_aud    = AUDIO.time_rel;
+                fs_audio = AUDIO.fs_estimated;
+                ch_names = AUDIO.channel_names;
 
-                thresh = get_threshold_field(res.params);
-                if isnan(thresh), continue; end
+                sig = audio_side_abs_sum(AUDIO, ch_names, AUDIO_BP_LOW, AUDIO_BP_HIGH, fs_audio);
 
-                rows(end+1,:) = { SUBJECT, PHASE, ACQUISITION, thresh, ...
-                    res.n_collisions, res.t_win_end - res.t_win_start, acq_folder }; %#ok<AGROW>
+                [t_ws, t_we] = safe_trial_window(events_file);
+                if isnan(t_ws) || isnan(t_we), continue; end
 
-            catch
-                continue;   % corrupted/incompatible file — skip silently
+                in_trial  = (t_aud >= t_ws) & (t_aud <= t_we);
+                t_trial   = t_aud(in_trial);
+                sig_trial = sig(in_trial);
+
+                keep = true(size(t_trial));
+                last_t = -inf;
+                for k = 1:numel(t_trial)
+                    if t_trial(k) > last_t, last_t = t_trial(k); else, keep(k) = false; end
+                end
+                t_trial   = t_trial(keep);
+                sig_trial = sig_trial(keep);
+
+                if isempty(sig_trial) || all(isnan(sig_trial)) || numel(t_trial) < 3
+                    continue;
+                end
+
+                acqCache(end+1) = struct('subject', SUBJECT, 'phase', PHASE, ...
+                    'acquisition', ACQUISITION, 'acq_folder', acq_folder, ...
+                    't_trial', t_trial, 'sig_trial', sig_trial); %#ok<SAGROW>
+
+                % Subsample (every 10th sample) to keep the pooled vector a
+                % manageable size across ~thousands of acquisitions.
+                pooled_samples = [pooled_samples; sig_trial(1:10:end)]; %#ok<AGROW>
+
+            catch ME
+                fprintf('  [skip %s/%s/%s] %s\n', SUBJECT, PHASE, ACQUISITION, ME.message);
+                continue;
             end
         end
     end
+    fprintf('Processed %s (%d acquisitions cached so far)\n', SUBJECT, numel(acqCache));
 end
 
-if isempty(rows)
-    error('No collision_results.mat files with a usable threshold field were found.');
+if isempty(acqCache)
+    error('FindFixedThreshold: no usable acquisitions found -- check BASE_FOLDER and that relabel_test_events.m has been run for Test1/Test2.');
 end
 
-T = cell2table(rows, 'VariableNames', ...
-    {'subject','phase','acquisition','threshold','n_collisions','duration','acq_folder'});
+fprintf('\nCached %d acquisitions across %d subjects.\n\n', numel(acqCache), numel(unique({acqCache.subject})));
 
-fprintf('Harvested %d acquisitions with saved thresholds across %d subjects.\n\n', ...
-    height(T), numel(unique(T.subject)));
+%% SECTION 2 — POOLED SIGNAL DISTRIBUTION AND CANDIDATE THRESHOLDS
+fprintf(' POOLED SIGNAL STATISTICS (all subjects, all acquisitions, every 10th sample)\n');
+fprintf('  n samples = %d\n', numel(pooled_samples));
+fprintf('  min/median/mean/max = %.5f / %.5f / %.5f / %.5f\n', ...
+    min(pooled_samples), median(pooled_samples), mean(pooled_samples), max(pooled_samples));
 
-%% SECTION 2 — DESCRIPTIVE STATS ON HARVESTED THRESHOLDS
-fprintf(' POOLED THRESHOLD STATISTICS (all subjects, all acquisitions)\n');
-fprintf('  n        = %d\n', height(T));
-fprintf('  min      = %.4f\n', min(T.threshold));
-fprintf('  max      = %.4f\n', max(T.threshold));
-fprintf('  mean     = %.4f\n', mean(T.threshold));
-fprintf('  median   = %.4f\n', median(T.threshold));
-fprintf('  std      = %.4f\n', std(T.threshold));
-fprintf('  p10/p25/p75/p90 = %.4f / %.4f / %.4f / %.4f\n', ...
-    prctile(T.threshold,10), prctile(T.threshold,25), ...
-    prctile(T.threshold,75), prctile(T.threshold,90));
+candidates = arrayfun(@(p) prctile(pooled_samples, p), CANDIDATE_PERCENTILES);
+candidates = unique(round(candidates, 5));
 
-% ---- Per-subject median (equal weight per subject, robust to reps-per-subject imbalance) ----
-subjList = unique(T.subject, 'stable');
-subjMedian = nan(numel(subjList),1);
-subjMean   = nan(numel(subjList),1);
-subjN      = nan(numel(subjList),1);
+fprintf('\nCandidate thresholds (percentiles %s of pooled signal): %s\n\n', ...
+    mat2str(CANDIDATE_PERCENTILES), mat2str(candidates));
 
-for si = 1:numel(subjList)
-    mask = strcmp(T.subject, subjList{si});
-    subjMedian(si) = median(T.threshold(mask));
-    subjMean(si)   = mean(T.threshold(mask));
-    subjN(si)      = sum(mask);
-end
-
-medianOfMedians = median(subjMedian);
-meanOfMedians   = mean(subjMedian);
-
-fprintf(' PER-SUBJECT THRESHOLD SUMMARY\n');
-for si = 1:numel(subjList)
-    fprintf('  %-10s : median=%.4f  mean=%.4f  n=%d\n', ...
-        subjList{si}, subjMedian(si), subjMean(si), subjN(si));
-end
-fprintf('\n  Median of per-subject medians : %.4f   <-- equal-weight, robust candidate\n', medianOfMedians);
-fprintf('  Mean   of per-subject medians : %.4f\n', meanOfMedians);
-fprintf('  Spread of per-subject medians : min=%.4f  max=%.4f  std=%.4f\n', ...
-    min(subjMedian), max(subjMedian), std(subjMedian));
-
-if std(subjMedian) / medianOfMedians > 0.3
-    fprintf('\n  [WARNING] Per-subject median thresholds vary widely (CV=%.1f%%).\n', ...
-        100*std(subjMedian)/medianOfMedians);
-    fprintf('            A single fixed threshold may not fit all subjects equally well.\n');
-end
-
-%% SECTION 3 — PLOTS OF HARVESTED THRESHOLDS
-fig1 = figure('Name','Threshold by subject','Units','normalized','Position',[0.05 0.1 0.5 0.6],'Visible','off');
-boxplot(T.threshold, T.subject);
-ylabel('Adaptive threshold used'); title('Threshold distribution per subject');
-xtickangle(45); grid on;
-yline(medianOfMedians, 'r--', 'LineWidth',1.5, 'Label','median-of-medians');
-
-fig2 = figure('Name','Threshold by phase','Units','normalized','Position',[0.55 0.1 0.4 0.6],'Visible','off');
-boxplot(T.threshold, T.phase);
-ylabel('Adaptive threshold used'); title('Threshold distribution per phase');
-xtickangle(45); grid on;
-
-fig3 = figure('Name','Pooled threshold histogram','Units','normalized','Position',[0.05 0.1 0.45 0.4],'Visible','off');
-histogram(T.threshold, 40, 'FaceColor',[0.2 0.45 0.8]);
+fig1 = figure('Name','Pooled signal histogram','Units','normalized','Position',[0.05 0.1 0.5 0.4],'Visible','off');
+histogram(pooled_samples, 100, 'FaceColor',[0.2 0.45 0.8]);
 hold on;
-xline(median(T.threshold), 'r-',  'LineWidth',1.5, 'Label','pooled median');
-xline(medianOfMedians,     'g--', 'LineWidth',1.5, 'Label','median-of-medians');
-xlabel('Threshold'); ylabel('Count'); title('Pooled threshold distribution (all acquisitions)');
-grid on;
-
-fig4 = figure('Name','Per-subject median (sorted)','Units','normalized','Position',[0.55 0.1 0.4 0.4],'Visible','off');
-[sortedMed, sortIdx] = sort(subjMedian);
-bar(sortedMed, 'FaceColor',[0.6 0.2 0.6]);
-set(gca, 'XTick', 1:numel(subjList), 'XTickLabel', subjList(sortIdx));
-xtickangle(45); ylabel('Median threshold');
-title('Per-subject median threshold (sorted)'); grid on;
-yline(medianOfMedians, 'r--', 'LineWidth',1.5);
-
-if SAVE_FIGS
-    exportgraphics(fig1, fullfile(base, 'thresh_by_subject.png'), 'Resolution',130);
-    exportgraphics(fig2, fullfile(base, 'thresh_by_phase.png'),   'Resolution',130);
-    exportgraphics(fig3, fullfile(base, 'thresh_histogram.png'),  'Resolution',130);
-    exportgraphics(fig4, fullfile(base, 'thresh_per_subject_sorted.png'), 'Resolution',130);
+for c = 1:numel(candidates)
+    xline(candidates(c), '--', sprintf('p%g', CANDIDATE_PERCENTILES(c)), 'LabelOrientation','horizontal');
 end
+xlabel('Signal amplitude (V)'); ylabel('Sample count');
+title('Pooled per-sample distribution of the new audio signal, with candidate thresholds');
+set(gca, 'YScale', 'log'); grid on;
 
-%% SECTION 4 — VALIDATION SWEEP: how well would candidate fixed thresholds
-fprintf(' VALIDATION SWEEP — candidate fixed thresholds\n');
+%% SECTION 3 — SWEEP: for each candidate, detect collisions in every cached acquisition
+fprintf(' SWEEP — detecting collisions per candidate threshold\n');
 
-candidates = unique([ ...
-    prctile(T.threshold,10), prctile(T.threshold,25), median(T.threshold), ...
-    prctile(T.threshold,75), prctile(T.threshold,90), medianOfMedians ]);
+valRows = {};   % subject, phase, acquisition, candidate, n_collisions
+for r = 1:numel(acqCache)
+    t_trial   = acqCache(r).t_trial;
+    sig_trial = acqCache(r).sig_trial;
 
-fprintf('Candidates to test: %s\n\n', mat2str(round(candidates,4)));
+    t_span = t_trial(end) - t_trial(1);
+    eff_min_dist = PEAK_MIN_DIST_SEC;
+    if eff_min_dist >= t_span, eff_min_dist = t_span * 0.5; end
+    if eff_min_dist <= 0, continue; end
 
-% For each acquisition: load audio ONCE, compute env_trial ONCE, then
-% cheaply re-run findpeaks for every candidate threshold.
-valRows = {};   % subject, phase, acquisition, candidate, n_original, n_candidate, diff
-
-for r = 1:height(T)
-
-    acq_folder = T.acq_folder{r};
-    audio_file  = fullfile(acq_folder, 'audio.mat');
-    events_file = fullfile(acq_folder, 'events.mat');
-
-    if ~isfile(audio_file) || ~isfile(events_file)
-        continue;   % can't validate this one — skip
-    end
-
-    try
-        U = load(audio_file);  AUDIO  = U.AUDIO;
-        E = load(events_file); EVENTS = E.EVENTS;
-
-        t_aud    = AUDIO.time_rel;
-        fs_audio = AUDIO.fs_estimated;
-        ch_names = AUDIO.channel_names;
-
-        known_new = {'ch11','ch12','ch13','ch14','ch16','ch17'};
-        known_old = {'ch12','ch13','ch14','ch16','ch17','ch18'};
-        idx_new   = find(ismember(ch_names, known_new));
-        idx_old   = find(ismember(ch_names, known_old));
-        if numel(idx_new) >= numel(idx_old)
-            audio_ch_idx = idx_new;
-        else
-            audio_ch_idx = idx_old;
-        end
-        if isempty(audio_ch_idx)
-            audio_ch_idx = 1:size(AUDIO.data, 2);
-        end
-
-        audio_raw = AUDIO.data(:, audio_ch_idx);
-        audio_bp  = bandpass_channels(audio_raw, fs_audio, 80, 1000);
-        env       = rms_envelope(audio_bp, fs_audio, 0.02);
-
-        t_ws = EVENTS.t_trial_start;
-        t_we = EVENTS.t_trial_end;
-
-        in_trial  = (t_aud >= t_ws) & (t_aud <= t_we);
-        env_trial = env(in_trial);
-        t_trial   = t_aud(in_trial);
-
-        % Ensure monotonic time (same defensive check as detection script)
-        keep = true(size(t_trial));
-        last_t = -inf;
-        for k = 1:numel(t_trial)
-            if t_trial(k) > last_t, last_t = t_trial(k); else, keep(k) = false; end
-        end
-        t_trial   = t_trial(keep);
-        env_trial = env_trial(keep);
-
-        if isempty(env_trial) || all(isnan(env_trial)) || numel(t_trial) < 3
-            continue;
-        end
-
-        t_span = t_trial(end) - t_trial(1);
-        eff_min_dist = PEAK_MIN_DIST_SEC;
-        if eff_min_dist >= t_span
-            eff_min_dist = t_span * 0.5;
-        end
-        if eff_min_dist <= 0, continue; end
-
-        for c = 1:numel(candidates)
-            cand = candidates(c);
-            [~, locs] = findpeaks(env_trial, t_trial, ...
-                'MinPeakDistance', eff_min_dist, 'MinPeakHeight', cand);
-            n_cand = numel(locs);
-
-            valRows(end+1,:) = { T.subject{r}, T.phase{r}, T.acquisition{r}, ...
-                cand, T.n_collisions(r), n_cand, n_cand - T.n_collisions(r) }; %#ok<AGROW>
-        end
-
-    catch
-        continue;
+    for c = 1:numel(candidates)
+        [~, locs] = findpeaks(sig_trial, t_trial, 'MinPeakDistance', eff_min_dist, 'MinPeakHeight', candidates(c));
+        valRows(end+1,:) = {acqCache(r).subject, acqCache(r).phase, acqCache(r).acquisition, ...
+            candidates(c), numel(locs)}; %#ok<AGROW>
     end
 end
 
-V = cell2table(valRows, 'VariableNames', ...
-    {'subject','phase','acquisition','candidate','n_original','n_candidate','diff'});
+V = cell2table(valRows, 'VariableNames', {'subject','phase','acquisition','candidate','n_collisions'});
 
-%% SECTION 5 — SUMMARIZE VALIDATION: which candidate best reproduces existing counts?
-fprintf('\n%-12s | %-10s | %-10s | %-10s | %-14s\n', 'Candidate', 'MeanAbsDiff', 'MedAbsDiff', 'Corr(r)', '%RepsExactMatch');
-fprintf('%s\n', repmat('-',1,65));
+%% SECTION 4 — SCORE EACH CANDIDATE: %-within-trusted-range + per-subject consistency
+fprintf('\n%-12s | %-16s | %-18s | %-10s\n', 'Candidate', '%%InTrustedRange', 'PerSubjMedianCV%%', 'MeanCount');
+fprintf('%s\n', repmat('-', 1, 65));
 
-candStats = struct('candidate',{},'mean_abs_diff',{},'median_abs_diff',{},'corr',{},'pct_exact',{});
+subjList = unique(V.subject, 'stable');
+candStats = struct('candidate', {}, 'pct_in_range', {}, 'subj_median_cv', {}, 'mean_count', {});
 
 for c = 1:numel(candidates)
     mask = V.candidate == candidates(c);
-    absdiff = abs(V.diff(mask));
-    corrVal = corr(V.n_original(mask), V.n_candidate(mask));
-    pctExact = 100 * mean(V.diff(mask) == 0);
+    counts = V.n_collisions(mask);
+    subjs  = V.subject(mask);
 
-    fprintf('%-12.4f | %-10.2f | %-10.1f | %-10.3f | %-14.1f\n', ...
-        candidates(c), mean(absdiff), median(absdiff), corrVal, pctExact);
+    pct_in_range = 100 * mean(counts >= REVIEW_LOW_N & counts <= REVIEW_HIGH_N);
+    mean_count   = mean(counts);
 
-    candStats(end+1) = struct('candidate',candidates(c), ...
-        'mean_abs_diff',mean(absdiff), 'median_abs_diff',median(absdiff), ...
-        'corr',corrVal, 'pct_exact',pctExact); %#ok<AGROW>
+    subjMed = nan(numel(subjList), 1);
+    for si = 1:numel(subjList)
+        subjMed(si) = median(counts(strcmp(subjs, subjList{si})));
+    end
+    subj_cv = 100 * std(subjMed, 'omitnan') / mean(subjMed, 'omitnan');
+
+    fprintf('%-12.5f | %-16.1f | %-18.1f | %-10.2f\n', candidates(c), pct_in_range, subj_cv, mean_count);
+
+    candStats(end+1) = struct('candidate', candidates(c), 'pct_in_range', pct_in_range, ...
+        'subj_median_cv', subj_cv, 'mean_count', mean_count); %#ok<SAGROW>
 end
 
-% ---- Pick winner: lowest mean absolute difference ----
-[~, winIdx] = min(arrayfun(@(s) s.mean_abs_diff, candStats));
+% ---- Pick winner: highest %-in-trusted-range, tie-broken by lowest per-subject CV ----
+pct_vals = arrayfun(@(s) s.pct_in_range, candStats);
+best_pct = max(pct_vals);
+tied = find(pct_vals >= best_pct - 1e-9);   % essentially equal to the max
+[~, best_of_tied] = min(arrayfun(@(i) candStats(i).subj_median_cv, tied));
+winIdx = tied(best_of_tied);
 winningThresh = candStats(winIdx).candidate;
 
-fprintf('\n>>> RECOMMENDED FIXED THRESHOLD: %.4f\n', winningThresh);
-fprintf('    (lowest mean abs. difference from existing adaptive-based counts: %.2f)\n', ...
-    candStats(winIdx).mean_abs_diff);
+fprintf('\n>>> RECOMMENDED FIXED THRESHOLD: %.5f\n', winningThresh);
+fprintf('    %.1f%% of acquisitions land in [%d, %d] collisions; per-subject median CV = %.1f%%\n', ...
+    candStats(winIdx).pct_in_range, REVIEW_LOW_N, REVIEW_HIGH_N, candStats(winIdx).subj_median_cv);
+fprintf('    This is a recommendation for visual inspection (see figures), not a silent final answer --\n');
+fprintf('    "in the trusted range" is a proxy for "plausible," not ground truth on any single acquisition.\n');
 
-%% SECTION 6 — PER-SUBJECT BIAS CHECK FOR THE WINNING THRESHOLD
-fprintf(' PER-SUBJECT BIAS — winning threshold = %.4f\n', winningThresh);
+%% SECTION 5 — PER-SUBJECT BIAS CHECK FOR THE WINNING THRESHOLD
+fprintf('\n PER-SUBJECT MEDIAN COUNT — winning threshold = %.5f\n', winningThresh);
 
 maskWin = V.candidate == winningThresh;
-Vwin = V(maskWin,:);
+Vwin = V(maskWin, :);
 
-subjBias = struct('subject',{},'mean_diff',{},'mean_abs_diff',{},'n',{});
+subjBias = struct('subject', {}, 'median_count', {}, 'n', {});
 for si = 1:numel(subjList)
     m = strcmp(Vwin.subject, subjList{si});
     if ~any(m), continue; end
-    subjBias(end+1) = struct('subject',subjList{si}, ...
-        'mean_diff', mean(Vwin.diff(m)), ...
-        'mean_abs_diff', mean(abs(Vwin.diff(m))), ...
-        'n', sum(m)); %#ok<AGROW>
-    fprintf('  %-10s : mean_diff=%+.2f  mean_abs_diff=%.2f  (n=%d reps)\n', ...
-        subjList{si}, subjBias(end).mean_diff, subjBias(end).mean_abs_diff, subjBias(end).n);
+    med_c = median(Vwin.n_collisions(m));
+    subjBias(end+1) = struct('subject', subjList{si}, 'median_count', med_c, 'n', sum(m)); %#ok<SAGROW>
+    flag = '';
+    if med_c < REVIEW_LOW_N || med_c > REVIEW_HIGH_N, flag = '  <-- outside trusted range'; end
+    fprintf('  %-10s : median n_collisions=%.1f  (n=%d acquisitions)%s\n', subjList{si}, med_c, sum(m), flag);
 end
 
-biasVals = arrayfun(@(s) s.mean_diff, subjBias);
-flaggedSubj = subjList(abs(biasVals) > 2);
+flaggedSubj = {subjBias(arrayfun(@(s) s.median_count < REVIEW_LOW_N || s.median_count > REVIEW_HIGH_N, subjBias)).subject};
 if ~isempty(flaggedSubj)
-    fprintf('\n  [FLAG] Subjects with |mean bias| > 2 collisions/rep at this threshold:\n');
+    fprintf('\n  [FLAG] Subjects whose median count falls outside [%d, %d] even at the winning threshold:\n', REVIEW_LOW_N, REVIEW_HIGH_N);
     fprintf('         %s\n', strjoin(flaggedSubj, ', '));
-    fprintf('         Consider reviewing these subjects individually.\n');
+    fprintf('         No single fixed threshold will fit these well -- review individually regardless of the global choice.\n');
 else
-    fprintf('\n  No subject shows a large systematic bias at this threshold — looks broadly consistent.\n');
+    fprintf('\n  No subject''s median count falls outside the trusted range at this threshold.\n');
 end
 
-%% SECTION 7 — VALIDATION PLOTS
-fig5 = figure('Name','Candidate threshold performance','Units','normalized','Position',[0.05 0.1 0.5 0.5],'Visible','off');
-bar(candidates, arrayfun(@(s) s.mean_abs_diff, candStats), 'FaceColor',[0.85 0.4 0.1]);
+%% SECTION 6 — VALIDATION PLOTS
+fig2 = figure('Name','Candidate threshold performance','Units','normalized','Position',[0.05 0.1 0.5 0.5],'Visible','off');
+yyaxis left;
+plot(candidates, pct_vals, '-o', 'LineWidth', 1.5); ylabel('%% acquisitions in trusted range');
+yyaxis right;
+plot(candidates, arrayfun(@(s) s.subj_median_cv, candStats), '-s', 'LineWidth', 1.5); ylabel('Per-subject median CV (%%)');
 hold on;
-plot(winningThresh, candStats(winIdx).mean_abs_diff, 'g*', 'MarkerSize',15,'LineWidth',2);
-xlabel('Candidate fixed threshold'); ylabel('Mean |Δ collisions| vs adaptive');
-title('Candidate threshold validation — lower is better'); grid on;
+xline(winningThresh, 'g--', 'LineWidth', 1.5, 'Label', 'recommended');
+xlabel('Candidate fixed threshold'); title('Candidate threshold self-consistency'); grid on;
 
-fig6 = figure('Name','Winning threshold — per-subject bias','Units','normalized','Position',[0.55 0.1 0.4 0.5],'Visible','off');
-bar(biasVals);
-set(gca, 'XTick', 1:numel(subjList), 'XTickLabel', subjList); xtickangle(45);
-ylabel('Mean (candidate - original) collisions/rep');
-title(sprintf('Per-subject bias at threshold=%.4f', winningThresh));
-yline(0, 'k-'); grid on;
+fig3 = figure('Name','Winning threshold -- per-subject median count','Units','normalized','Position',[0.55 0.1 0.4 0.5],'Visible','off');
+medVals = arrayfun(@(s) s.median_count, subjBias);
+[sortedMed, sortIdx] = sort(medVals);
+bar(sortedMed, 'FaceColor',[0.6 0.2 0.6]);
+set(gca, 'XTick', 1:numel(subjBias), 'XTickLabel', {subjBias(sortIdx).subject}); xtickangle(45);
+ylabel('Median n\_collisions'); title(sprintf('Per-subject median count at threshold=%.5f', winningThresh));
+yline(REVIEW_LOW_N, 'r--'); yline(REVIEW_HIGH_N, 'r--'); grid on;
+
+fig4 = figure('Name','Collision count by phase','Units','normalized','Position',[0.05 0.1 0.5 0.4],'Visible','off');
+boxplot(Vwin.n_collisions, Vwin.phase);
+ylabel('n\_collisions at winning threshold'); title('Collision count distribution per phase');
+yline(REVIEW_LOW_N, 'r--'); yline(REVIEW_HIGH_N, 'r--');
+xtickangle(45); grid on;
 
 if SAVE_FIGS
-    exportgraphics(fig5, fullfile(base, 'candidate_validation.png'), 'Resolution',130);
-    exportgraphics(fig6, fullfile(base, 'winning_threshold_bias.png'), 'Resolution',130);
+    exportgraphics(fig1, fullfile(base, 'newsig_pooled_histogram.png'), 'Resolution',130);
+    exportgraphics(fig2, fullfile(base, 'candidate_selfconsistency.png'), 'Resolution',130);
+    exportgraphics(fig3, fullfile(base, 'winning_threshold_persubject.png'), 'Resolution',130);
+    exportgraphics(fig4, fullfile(base, 'winning_threshold_byphase.png'), 'Resolution',130);
 end
 
-%% SECTION 8 — SAVE EVERYTHING TO .mat FOR LATER REFERENCE
-save(fullfile(base, 'FixedThresholdAnalysis.mat'), 'T', 'V', 'candStats', 'subjBias', 'winningThresh');
-
-fprintf('\n[SAVE] Harvested table, validation table, and recommendation saved to:\n  %s\n', ...
-    fullfile(base, 'FixedThresholdAnalysis.mat'));
+%% SECTION 7 — SAVE EVERYTHING
+save(fullfile(base, 'FixedThresholdAnalysis.mat'), 'V', 'candStats', 'subjBias', 'winningThresh', 'pooled_samples');
+fprintf('\n[SAVE] Validation table and recommendation saved to:\n  %s\n', fullfile(base, 'FixedThresholdAnalysis.mat'));
 
 diary off;
-fprintf('\n[REPORT SAVED] → %s\n\n', report_file);
+fprintf('\n[REPORT SAVED] -> %s\n\n', report_file);
 
 
-%  LOCAL FUNCTIONS 
+%  LOCAL FUNCTIONS
 
-function t = get_threshold_field(paramsStruct)
-    % Handles the different field names used across script versions
-    t = NaN;
-    if isfield(paramsStruct, 'adaptive_thresh')
-        t = paramsStruct.adaptive_thresh;
-    elseif isfield(paramsStruct, 'fixed_audio_thresh')
-        t = paramsStruct.fixed_audio_thresh;
-    elseif isfield(paramsStruct, 'peak_height_factor')
-        t = NaN;   % factor-based, not an absolute threshold — not comparable, skip
+function sig = audio_side_abs_sum(AUDIO, ch_names, bp_lo, bp_hi, fs)
+% Reproduces Accelerometer_visualization.m's validated sumbp = xbp+ybp+zbp
+% exactly, per side (Left: x/y/z summed after individually bandpassing;
+% Right: same), then combines the two sides by taking whichever side has
+% the larger |sum| at each instant. No rectification before the per-axis
+% sum, and no RMS-envelope smoothing.
+    scheme_old = {'ch12','ch13','ch14','ch16','ch17','ch18'};   % L: ch12/13/14 | R: ch16/17/18
+    scheme_new = {'ch11','ch12','ch13','ch14','ch16','ch17'};   % L: ch11/12/13 | R: ch14/16/17
+    if all(ismember(scheme_old, ch_names))
+        L_names = scheme_old(1:3); R_names = scheme_old(4:6);
+    elseif all(ismember(scheme_new, ch_names))
+        L_names = scheme_new(1:3); R_names = scheme_new(4:6);
+    else
+        error('audio_side_abs_sum: neither known audiomixer channel scheme found in: %s', strjoin(ch_names, ', '));
     end
-end
 
-function out = bandpass_channels(mat, fs, flo, fhi)
-    out = zeros(size(mat,1), 1);
-    for k = 1:size(mat,2)
-        col = double(mat(:,k));
-        col = col - mean(col, 'omitnan');
-        if numel(col) > 10*fs
-            col = bandpass(col, [flo fhi], fs);
-        end
-        out = max(out, abs(col));
-    end
-end
+    get_ch = @(name) double(AUDIO.data(:, find(strcmp(ch_names, name), 1)));
+    bp     = @(x) bandpass(x - mean(x, 'omitnan'), [bp_lo bp_hi], fs);
 
-function env = rms_envelope(sig, fs, win_sec)
-    win = max(3, round(fs * win_sec));
-    env = sqrt(movmean(sig.^2, win));
+    sum_L = bp(get_ch(L_names{1})) + bp(get_ch(L_names{2})) + bp(get_ch(L_names{3}));
+    sum_R = bp(get_ch(R_names{1})) + bp(get_ch(R_names{2})) + bp(get_ch(R_names{3}));
+
+    sig = max(abs(sum_L), abs(sum_R));
 end

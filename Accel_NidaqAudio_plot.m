@@ -8,7 +8,7 @@
 clear; clc; close all;
 
 output_root    = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
-mat_folder     = fullfile(output_root, 'subject_s04H', 'Baseline1', 'Level1');
+mat_folder     = fullfile(output_root, 'subject_s07N', 'Test1'); %, 'Level1'
 
 bp_lo = 80; bp_hi = 1000;
 

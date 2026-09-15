@@ -36,8 +36,10 @@ function [T, T_coll] = gsr_extract_features(cfg)
 %     practice for those measures).
 %   - Demographic covariates (age, gender, handedness, gaming/robotic experience -- SAP Section 6) are NOT included: no demographics file
 %     has been supplied. Join one onto T by 'subject' before fitting your final confirmatory models if you want those covariates included.
-%   - Baseline/Test acquisitions ('Level1'..'Level5') are each single, unrepeated trials, so 'repetition' is NaN for those rows.
-
+%   - Baseline acquisitions ('Level1'..'Level5') are each single, unrepeated trials, so 'repetition' is NaN for those rows.
+%     Test (Peg Transfer) acquisitions have no Level subdivision at all -- Test1/Test2 hold their sensor files directly, with
+%     no acquisition subfolder underneath, so both 'level' and 'repetition' are NaN for those rows (see the phase-branching
+%     logic below for how this differs from Baseline's Level1..Level5 structure)
     all_phases = [cfg.baseline_phases, cfg.training_levels, cfg.test_phases];
 
     rows      = {};
@@ -66,24 +68,33 @@ function [T, T_coll] = gsr_extract_features(cfg)
 
             is_training = ismember(phase, cfg.training_levels);
             is_baseline = ismember(phase, cfg.baseline_phases);
+            is_test = ismember(phase, cfg.test_phases);
 
             if is_training
                 phase_type   = 'training';
                 level_num    = str2double(regexp(phase, '\d+', 'match', 'once'));
                 acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:cfg.n_training_reps, 'UniformOutput', false);
                 rep_nums     = 1:cfg.n_training_reps;
-            else
-                phase_type   = local_ternary(is_baseline, 'baseline', 'test');
+            elseif is_baseline
+                phase_type   =  'baseline';
                 acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:numel(cfg.level_names), 'UniformOutput', false);
                 rep_nums     = nan(1, numel(acquisitions));
+            else
+                phase_type   = 'test';
+                acquisitions = {'main'};
+                rep_nums     = NaN;
             end
 
             for ai = 1:numel(acquisitions)
                 acq     = acquisitions{ai};
-                acq_dir = fullfile(phase_dir, acq);
-                if ~isfolder(acq_dir)
-                    if isfolder([acq_dir '_R']), acq_dir = [acq_dir '_R'];
-                    else, continue; end
+                if is_test
+                    acq_dir = phase_dir;
+                else
+                    acq_dir = fullfile(phase_dir, acq);
+                    if ~isfolder(acq_dir)
+                        if isfolder([acq_dir '_R']), acq_dir = [acq_dir '_R'];
+                        else, continue; end
+                    end
                 end
 
                 gsr_path  = fullfile(acq_dir, 'gsr.mat');
@@ -173,8 +184,10 @@ function [T, T_coll] = gsr_extract_features(cfg)
                 rep_this = rep_nums(ai);
                 if is_training
                     level_this = level_num;
+                elseif is_baseline
+                    level_this = ai;   % Baseline: acquisition index IS the level
                 else
-                    level_this = ai;   % Baseline/Test: acquisition index IS the level
+                    level_this = NaN;  % Test (Peg Transfer): no difficulty-level concept
                 end
 
                 if isfile(coll_path)
@@ -232,8 +245,4 @@ function [T, T_coll] = gsr_extract_features(cfg)
 
     fprintf('\nSaved block-level table (%d rows) and collision-level table (%d rows) to %s\n', ...
         height(T), height(T_coll), cfg.output_root);
-end
-
-function out = local_ternary(cond, a, b)
-    if cond, out = a; else, out = b; end
 end

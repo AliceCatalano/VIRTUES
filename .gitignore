@@ -10,3 +10,4 @@ subject_io/
 *.mcap.zstd
 *.mat
 *.asv
+*.fig

@@ -67,52 +67,67 @@ function [T, T_coll] = eye_extract_features(cfg)
 %            gsr_extract_features.m.
 %
 % Level-of-difficulty and repetition-across-training structure match
-% gsr_extract_features.m exactly (level = 1-5, repetition = 1-10 for
-% training rows, NaN for Baseline/Test rows).
+% gsr_extract_features.m exactly: level = 1-5 for training and Baseline 
+% rows, repetition = 1-10 for training rows only. Test (Peg Transfer) rows
+% have no Level subdivision at all (Test1/Test2 hold their sensor files
+% directly, no acquisition subfolder underneath) -- both level and
+% repetition are NaN for those rows, not just repetition.
 
     all_phases = [cfg.baseline_phases, cfg.training_levels, cfg.test_phases];
     rows      = {};
     coll_rows = {};
-
+    
     for si = 1:numel(cfg.all_subjects)
         subj     = cfg.all_subjects{si};
         group    = subj(end);
         haptic   = strcmp(group, 'H');
         subj_dir = fullfile(cfg.data_root, subj);
-
+    
         rest_ref = eye_rest_baseline(subj, cfg);
         has_rest_ref = ~isempty(rest_ref);
         if ~has_rest_ref
             fprintf('  [no eye rest baseline] %s -- pupil_mean_bc/pctchg will be NaN\n', subj);
         end
-
+    
         for ph_idx = 1:numel(all_phases)
             phase     = all_phases{ph_idx};
             phase_dir = fullfile(subj_dir, phase);
             if ~isfolder(phase_dir), continue; end
-
+    
             is_training = ismember(phase, cfg.training_levels);
             is_baseline = ismember(phase, cfg.baseline_phases);
-
+            is_test     = ismember(phase, cfg.test_phases);
+    
             if is_training
                 phase_type   = 'training';
                 level_num    = str2double(regexp(phase, '\d+', 'match', 'once'));
                 acquisitions = arrayfun(@(k) sprintf('rep_%02d', k), 1:cfg.n_training_reps, 'UniformOutput', false);
                 rep_nums     = 1:cfg.n_training_reps;
-            else
-                phase_type   = local_ternary(is_baseline, 'baseline', 'test');
+            elseif is_baseline
+                phase_type   = 'baseline';
                 acquisitions = arrayfun(@(k) sprintf('Level%d', k), 1:numel(cfg.level_names), 'UniformOutput', false);
                 rep_nums     = nan(1, numel(acquisitions));
+            else
+                % Peg Transfer (Test1/Test2): no Level1..Level5 subdivision
+                % -- see gsr_extract_features.m's matching comment. acq_dir
+                % is set to phase_dir directly below, not a subfolder.
+                phase_type   = 'test';
+                acquisitions = {'main'};
+                rep_nums     = NaN;
             end
-
+    
             for ai = 1:numel(acquisitions)
-                acq     = acquisitions{ai};
-                acq_dir = fullfile(phase_dir, acq);
-                if ~isfolder(acq_dir)
-                    if isfolder([acq_dir '_R']), acq_dir = [acq_dir '_R'];
-                    else, continue; end
+                acq = acquisitions{ai};
+                if is_test
+                    acq_dir = phase_dir;
+                else
+                    acq_dir = fullfile(phase_dir, acq);
+                    if ~isfolder(acq_dir)
+                        if isfolder([acq_dir '_R']), acq_dir = [acq_dir '_R'];
+                        else, continue; end
+                    end
                 end
-
+    
                 eye_path  = fullfile(acq_dir, 'eye.mat');
                 ev_path   = fullfile(acq_dir, 'events.mat');
                 coll_path = fullfile(acq_dir, 'collision_results.mat');
@@ -126,24 +141,33 @@ function [T, T_coll] = eye_extract_features(cfg)
                     fprintf('  [skip: no TRIAL_START/END found] %s/%s/%s\n', subj, phase, acq);
                     continue;
                 end
-
+    
                 try
                     proc = eye_preprocess(eye_path, cfg, t_start, t_end);
                 catch ME
                     fprintf('  [skip eye] %s/%s/%s: %s\n', subj, phase, acq, ME.message);
                     continue;
                 end
-
+    
                 valid_pupil = isfinite(proc.pupil);
                 if sum(valid_pupil) >= 2
                     pupil_mean = mean(proc.pupil(valid_pupil));
-                    pp = polyfit(proc.time(valid_pupil), proc.pupil(valid_pupil), 1);
+                    t_valid = proc.time(valid_pupil);
+                    pp = polyfit(t_valid, proc.pupil(valid_pupil), 1);
                     pupil_slope = pp(1);
+                    t_range = max(t_valid) - min(t_valid);
+                    if t_range > 0
+                        pp_norm = polyfit((t_valid - min(t_valid)) / t_range, proc.pupil(valid_pupil), 1);
+                        pupil_slope_norm = pp_norm(1);
+                    else
+                        pupil_slope_norm = NaN;
+                    end
                 else
                     pupil_mean  = NaN;
                     pupil_slope = NaN;
+                    pupil_slope_norm = NaN;
                 end
-
+    
                 if has_rest_ref && isfinite(pupil_mean)
                     pupil_mean_bc     = pupil_mean - rest_ref.pupil_mean;
                     pupil_mean_pctchg = 100 * pupil_mean_bc / rest_ref.pupil_mean;
@@ -151,30 +175,32 @@ function [T, T_coll] = eye_extract_features(cfg)
                     pupil_mean_bc     = NaN;
                     pupil_mean_pctchg = NaN;
                 end
-
+    
                 valid_xy = isfinite(proc.x) & isfinite(proc.y);
                 if sum(valid_xy) >= 2
                     gaze_dispersion = sqrt(var(proc.x(valid_xy)) + var(proc.y(valid_xy)));
                 else
                     gaze_dispersion = NaN;
                 end
-
+    
                 n_saccades = numel(proc.saccade_times);
                 if proc.valid_duration_s > 0
                     saccade_rate = n_saccades / (proc.valid_duration_s / 60);
                 else
                     saccade_rate = NaN;
                 end
-
+    
                 blink_frac = mean(proc.blink);
-
+    
                 rep_this = rep_nums(ai);
                 if is_training
                     level_this = level_num;
-                else
+                elseif is_baseline
                     level_this = ai;
+                else
+                    level_this = NaN;  % Test (Peg Transfer): no difficulty-level concept
                 end
-
+    
                 % --- Event-locked (collision) outcomes: pupil response +
                 % saccade orienting response, mirroring the collision loop
                 % in gsr_extract_features.m ---
@@ -199,7 +225,7 @@ function [T, T_coll] = eye_extract_features(cfg)
                                     if isfinite(peak), resp(ci) = peak - base_val; end
                                 end
                                 sacc(ci) = any(proc.saccade_times > t0 & proc.saccade_times <= t0 + 1.0);
-
+    
                                 coll_rows(end+1, :) = {subj, group, haptic, phase_type, phase, acq, ...
                                     level_this, rep_this, ci, t0, resp(ci), sacc(ci)}; %#ok<AGROW>
                             end
@@ -210,30 +236,30 @@ function [T, T_coll] = eye_extract_features(cfg)
                         fprintf('  [skip collisions] %s/%s/%s: %s\n', subj, phase, acq, ME.message);
                     end
                 end
-
+    
                 rows(end+1, :) = {subj, group, haptic, phase_type, phase, acq, ...
                     level_this, rep_this, pupil_mean, pupil_mean_bc, pupil_mean_pctchg, ...
-                    pupil_slope, gaze_dispersion, ...
-                    n_saccades, saccade_rate, blink_frac, proc.n_reordered, ...
+                    pupil_slope, pupil_slope_norm, gaze_dispersion, ...
+                    n_saccades, saccade_rate, proc.valid_duration_s, blink_frac, proc.n_reordered, ...
                     n_coll, coll_pupil_resp_mean, coll_saccade_rate}; %#ok<AGROW>
             end
         end
         fprintf('Processed %s\n', subj);
     end
-
+    
     varnames = {'subject','group','haptic','phase_type','phase','acquisition', ...
         'level','repetition','pupil_mean','pupil_mean_bc','pupil_mean_pctchg', ...
-        'pupil_slope','gaze_dispersion', ...
-        'n_saccades','saccade_rate','blink_frac','n_reordered', ...
+        'pupil_slope','pupil_slope_norm','gaze_dispersion', ...
+        'n_saccades','saccade_rate','valid_duration','blink_frac','n_reordered', ...
         'n_collisions','collision_pupil_response_mean','collision_saccade_response_rate'};
     T = cell2table(rows, 'VariableNames', varnames);
     if height(T) > 0, T.haptic = logical(T.haptic); end
-
+    
     coll_varnames = {'subject','group','haptic','phase_type','phase','acquisition', ...
         'level','repetition','collision_idx','collision_t','pupil_response','saccade_response'};
     T_coll = cell2table(coll_rows, 'VariableNames', coll_varnames);
     if height(T_coll) > 0, T_coll.haptic = logical(T_coll.haptic); end
-
+    
     if ~exist(cfg.output_root, 'dir'), mkdir(cfg.output_root); end
     save(fullfile(cfg.output_root, 'eye_features.mat'), 'T', 'T_coll');
     writetable(T,      fullfile(cfg.output_root, 'eye_features_blocklevel.csv'));
@@ -242,8 +268,4 @@ function [T, T_coll] = eye_extract_features(cfg)
         height(T), height(T_coll), cfg.output_root);
     fprintf('Total reordered (out-of-order) samples across all acquisitions: %d -- if large, revisit eye_preprocess.m''s sort-based fix.\n', ...
         sum(T.n_reordered));
-end
-
-function out = local_ternary(cond, a, b)
-    if cond, out = a; else, out = b; end
 end

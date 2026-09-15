@@ -94,7 +94,7 @@ for lv = 1:nLevels
     ax = axes(fig);
     hold(ax, 'on');
 
-    violin_pair(ax, {data_N, data_H}, {'Non-haptic (N)', 'Haptic (H)'}, {COLOR_N, COLOR_H});
+    violin_plot(ax, {data_N, data_H}, {'Non-haptic (N)', 'Haptic (H)'}, {COLOR_N, COLOR_H});
     hold on; 
 
     ylabel(ax, 'Mean duration (s)');
@@ -129,7 +129,7 @@ for lv = 1:nLevels
     ax = axes(fig);
     hold(ax, 'on');
 
-    violin_pair_grouped(ax, groups, labels, {COLOR_N, COLOR_H});
+    violin_plot(ax, groups, labels, {COLOR_N, COLOR_H});
 
     ylabel(ax, 'Mean duration (s)');
     title(ax, sprintf('Level %d — first 3 vs last 3 repetitions', lv));

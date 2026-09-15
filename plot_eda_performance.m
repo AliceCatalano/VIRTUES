@@ -21,7 +21,7 @@
 % function loads what it needs independently and errors with a clear
 % message naming the missing file if a prerequisite hasn't been run.
 
-clear; clc; close all;
+
 cfg = config();
 
 plot_learning_curves(cfg);

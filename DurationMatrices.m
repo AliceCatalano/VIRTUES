@@ -1,30 +1,8 @@
 %% VIRTUES -- Cross-Participant Duration Comparison
-% Builds duration matrices across participants for:
-%   - Baseline trials      (nSubjects x 10)
-%   - Test trials          (nSubjects x 2)
-%   - Level repetitions    (nSubjects x 5 x 10)
-%
-% HOW TO USE
-% ----------
-%   FULL RUN    Run the whole script. On first run it loads your existing
-%               .mat files and processes only the subjects not yet in them.
-%               On every subsequent run it does the same -- existing rows
-%               are never touched.
-%
-%   ADD SUBJECTS  Append new IDs anywhere in 'participants', re-run.
-%               The new subjects are detected automatically and appended.
-%
-%   PLOTS ONLY  Run Section 3 alone (Ctrl+Enter inside the section).
-%               It loads the .mat files and plots without recomputing.
-%
-%   FORCE REDO  Set FORCE_RECOMPUTE = true to ignore existing data.
-
-%% ========================================================================
-%  SECTION 1 -- CONFIGURATION
-% =========================================================================
-
-BASE_FOLDER = '/run/user/1003/gvfs/smb-share:server=shark,share=acatalano';
-SAVE_PATH   = '/home/acatalano/Desktop/Virtues';
+clear; clc; close all;
+cfg = config();
+BASE_FOLDER = cfg.data_root;
+SAVE_PATH   = cfg.data_root;
 
 % Paths to the three matrix files (created on first run if missing)
 FILE_BASELINE = fullfile(SAVE_PATH, 'DurationBaseline.mat');
@@ -44,16 +22,7 @@ nBaseline  = 10;   % 2 acquisitions x 5 levels
 nTest      = 2;
 
 YLIM_DUR        = [0, 180];
-FORCE_RECOMPUTE = false;
-
-%% ========================================================================
-%  SECTION 2 -- COMPUTE  (incremental: skips subjects already stored)
-% =========================================================================
-
-% ------------------------------------------------------------------
-% Load existing matrices. Priority: files on disk > fresh start.
-% If FORCE_RECOMPUTE, treat everything as new.
-% ------------------------------------------------------------------
+FORCE_RECOMPUTE = true;
 if FORCE_RECOMPUTE
     fprintf('FORCE_RECOMPUTE=true -- all subjects will be reprocessed.\n');
     participants_done = {};
@@ -83,8 +52,7 @@ else
         DurationLevels = nan(0, nLevels, nRepsLevel);
     end
 
-    % Load the participant index. On the very first run FILE_DONE won't
-    % exist yet -- infer from the number of existing rows instead.
+    % Load the participant index. On the very first run FILE_DONE won't exist yet -- infer from the number of existing rows instead.
     if isfile(FILE_DONE)
         D = load(FILE_DONE, 'participants_done');
         participants_done = D.participants_done;
@@ -92,8 +60,7 @@ else
         nRows = size(DurationBaseline, 1);
         if nRows > 0 && nRows <= numel(participants)
             participants_done = participants(1:nRows);
-            fprintf(['FILE_DONE not found. Inferring that the first %d entries\n' ...
-                     'in ''participants'' match the %d existing rows.\n' ...
+            fprintf(['FILE_DONE not found. Inferring that the first %d entries\n' 'in ''participants'' match the %d existing rows.\n' ...
                      'If that is wrong, set FORCE_RECOMPUTE=true.\n'], nRows, nRows);
         else
             participants_done = {};
@@ -101,9 +68,6 @@ else
     end
 end
 
-% ------------------------------------------------------------------
-% Identify which subjects in the requested list are missing
-% ------------------------------------------------------------------
 is_new   = ~ismember(participants, participants_done);
 new_subj = participants(is_new);
 nNew     = numel(new_subj);
@@ -116,8 +80,7 @@ if nNew > 0
     DurationBaseline = [DurationBaseline; nan(nNew, nBaseline)];
     DurationTest     = [DurationTest;     nan(nNew, nTest)];
     DurationLevels   = cat(1, DurationLevels, nan(nNew, nLevels, nRepsLevel));
-    fprintf('Already stored: %d subjects.\nNew to process : %s\n', ...
-            numel(participants_done), strjoin(new_subj, ', '));
+    fprintf('Already stored: %d subjects.\nNew to process : %s\n', numel(participants_done), strjoin(new_subj, ', '));
 else
     fprintf('All %d subjects already stored -- nothing to compute.\n', nSubj);
     fprintf('Run Section 3 for plots, or set FORCE_RECOMPUTE=true to redo.\n');
@@ -126,9 +89,6 @@ end
 participants     = all_participants;
 any_new_computed = false;
 
-% ------------------------------------------------------------------
-% Main loop -- only runs for new subjects
-% ------------------------------------------------------------------
 for si = 1:nSubj
 
     subj = participants{si};
@@ -199,18 +159,13 @@ for si = 1:nSubj
     end
 
 end
-
-% ------------------------------------------------------------------
-% Save back to the three .mat files + update FILE_DONE
-% ------------------------------------------------------------------
 if any_new_computed || FORCE_RECOMPUTE
     participants_done = participants;
     save(FILE_BASELINE, 'DurationBaseline');
     save(FILE_TEST,     'DurationTest');
     save(FILE_LEVEL,    'DurationLevels');
     save(FILE_DONE,     'participants_done');
-    fprintf('\nMatrices saved to:\n  %s\n  %s\n  %s\n', ...
-            FILE_BASELINE, FILE_TEST, FILE_LEVEL);
+    fprintf('\nMatrices saved to:\n  %s\n  %s\n  %s\n', FILE_BASELINE, FILE_TEST, FILE_LEVEL);
     fprintf('Participant index saved to:\n  %s\n', FILE_DONE);
 end
 
@@ -220,11 +175,7 @@ fprintf('DurationBaseline : %d x %d\n',      size(DurationBaseline));
 fprintf('DurationTest     : %d x %d\n',      size(DurationTest));
 fprintf('DurationLevels   : %d x %d x %d\n', size(DurationLevels));
 
-%% ========================================================================
-%  SECTION 3 -- PLOTS  (run this section alone to regenerate figures)
-% =========================================================================
-
-% Load from files if matrices are not already in the workspace
+%%  PLOTS  (run this section alone to regenerate figures)
 if ~exist('DurationBaseline','var') || ~exist('participants','var')
     fprintf('Loading matrices for plotting...\n');
     S1 = load(FILE_BASELINE, 'DurationBaseline');
@@ -294,10 +245,7 @@ end
 
 fprintf('\nAll plots generated.\n');
 
-%% ========================================================================
-%  LOCAL HELPER FUNCTIONS
-% =========================================================================
-
+%% LOCAL HELPER FUNCTIONS
 function folder = resolve_rep_folder(level_folder, rep)
 % Returns the _R (redo) folder if it exists, otherwise the original.
     redo = fullfile(level_folder, sprintf('rep_%02d_R', rep));
@@ -309,45 +257,13 @@ function dur = get_trial_duration(folder_path)
 % Returns duration (s) from real movement start to trial end.
     dur = NaN;
     if ~isfolder(folder_path), return; end
-    events_file = fullfile(folder_path, 'events.csv');
-    if ~isfile(events_file), return; end
-    try, events = readtable(events_file); catch, return; end
-    if isempty(events), return; end
-
-    if ismember('recording_time', events.Properties.VariableNames)
-        t_col = events.recording_time;
-    else
-        num_cols = varfun(@isnumeric, events, 'OutputFormat', 'uniform');
-        if ~any(num_cols), return; end
-        t_col = events{:, find(num_cols, 1)};
-    end
-    if iscell(t_col) || ischar(t_col), t_col = str2double(t_col); end
-    if ~ismember('data', events.Properties.VariableNames), return; end
-
-    [t_start, t_end] = parse_trial_window(events, t_col);
+    ev_path = fullfile(folder_path, 'events.mat');
+    if ~isfile(ev_path), return; end
+    [t_start, t_end] = safe_trial_window(ev_path);
     if isnan(t_start) || isnan(t_end) || t_end <= t_start, return; end
     dur = t_end - t_start;
 end
 
-function [t_start, t_end] = parse_trial_window(events, t_col)
-% t_end   : system END event (always reliable).
-% t_start : last [Publisher] event_spacebar before END = operator keyboard
-%           press marking real movement onset.
-%           Falls back to system START if no spacebar found.
-    t_start = NaN; t_end = NaN;
-    end_mask   = contains(events.data, 'END')   & ~contains(events.data, 'START');
-    start_mask = contains(events.data, 'START') & ~contains(events.data, 'END');
-    kb_mask    = contains(events.data, '[Publisher]') & ...
-                 contains(events.data, 'event_spacebar');
-    if ~any(end_mask), return; end
-    t_end = t_col(find(end_mask, 1, 'last'));
-    kb_before_end = kb_mask & (t_col < t_end);
-    if any(kb_before_end)
-        t_start = t_col(find(kb_before_end, 1, 'last'));
-    elseif any(start_mask)
-        t_start = t_col(find(start_mask, 1, 'first'));
-    end
-end
 
 function plot_mean_line(mat, col)
 % Overlays the group mean (ignoring NaN) as a thick dashed line.
