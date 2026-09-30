@@ -14,8 +14,7 @@ function results = gsr_training_lmm(T, outcome, covariate_cols)
 % Which structure was used, and both AIC/BIC, are printed and stored in results.re_structure / results.re_diagnostic for auditing.
 % NOTE: SAP Section 6 states demographic covariates (age, gender,handedness, gaming/robotic experience) will be included in "all primary
 % models," but the explicit formula in Section 4.2 omits them, and no demographics file has been supplied to this pipeline. If you have one,
-% join it onto T by 'subject' and add covariate terms to the formula below
-% before treating this as the final confirmatory model -- as written here
+% join it onto T by 'subject' and add covariate terms to the formula below before treating this as the final confirmatory model -- as written here
 % it implements the 4.2 formula literally, without covariates.
     
     if nargin < 3, covariate_cols = {}; end
@@ -26,8 +25,7 @@ function results = gsr_training_lmm(T, outcome, covariate_cols)
     end
 
     if height(Ttr) < 10
-        warning('fit_training_lmm: only %d usable rows for %s -- model may not be reliable', ...
-            height(Ttr), outcome);
+        warning('fit_training_lmm: only %d usable rows for %s -- model may not be reliable', height(Ttr), outcome);
     end
 
     Ttr.subject_cat = categorical(Ttr.subject);
@@ -44,16 +42,13 @@ function results = gsr_training_lmm(T, outcome, covariate_cols)
 
     [lme, re_structure, re_diag] = fit_lmm_with_re_fallback(Ttr, formula_maximal, formula_reduced, outcome);
 
-     fprintf('\n=== %s (training phase, n=%d obs, %d subjects, RE structure: %s) ===\n', ...
-        outcome, lme.NumObservations, numel(unique(Ttr.subject_cat)), re_structure);
+    fprintf('\n=== %s (training phase, n=%d obs, %d subjects, RE structure: %s) ===\n', outcome, lme.NumObservations, numel(unique(Ttr.subject_cat)), re_structure);
     disp(lme);
 
     fe = lme.Coefficients;
 
-    % fitlme names interaction terms in the order the variables first
-    % appear in the formula (here: 'repetition:haptic_num', not
-    % 'haptic_num:repetition'), so match on the set of terms rather than
-    % a fixed string order.
+    % fitlme names interaction terms in the order the variables first appear in the formula (here: 'repetition:haptic_num', not
+    % 'haptic_num:repetition'), so match on the set of terms rather than a fixed string order.
     target_terms = sort({'haptic_num', 'repetition'});
     interaction_row = cellfun(@(name) isequal(sort(strsplit(name, ':')), target_terms), fe.Name);
 
@@ -76,7 +71,8 @@ function results = gsr_training_lmm(T, outcome, covariate_cols)
     level_haptic_mask       = ~cellfun('isempty', regexp(fe.Name, ':haptic_num$', 'once')) & ~cellfun('isempty', regexp(fe.Name, '^level_cat', 'once'));
     results.level_haptic    = table(fe.Name(level_haptic_mask), fe.Estimate(level_haptic_mask), ...
         fe.SE(level_haptic_mask), fe.pValue(level_haptic_mask),'VariableNames', {'term','beta','se','p'});
-     % --- Within-group simple effects (the explicit within-subject trend for EACH group on its own, not just the H-vs-N difference) ---
+    
+% --- Within-group simple effects (the explicit within-subject trend for EACH group on its own, not just the H-vs-N difference) ---
     % Because haptic_num=0 (N) is the reference level, the raw 'repetition' and 'level_cat_k' coefficients ARE already the N group's simple
     % effects -- but reading a p-value straight off fe.pValue for the H group's effect (repetition + repetition:haptic_num, or level_cat_k +
     % level_cat_k:haptic_num) is wrong unless you account for the covariance between those two coefficients, which fe.SE alone doesn't
@@ -109,8 +105,7 @@ function results = gsr_training_lmm(T, outcome, covariate_cols)
         contrast_rows(end+1,:) = add_contrast(sprintf('level %s vs level 1', lvl), 'H', c);
     end
 
-    results.simple_effects = cell2table(contrast_rows, ...
-        'VariableNames', {'effect','group','beta','se','t','df','p','lower','upper'});
+    results.simple_effects = cell2table(contrast_rows,'VariableNames', {'effect','group','beta','se','t','df','p','lower','upper'});
 end
 
 
@@ -173,8 +168,7 @@ function out = local_ternary(cond, a, b)
 end
 
 function row = local_add_contrast(fe, covb, dfe, c, label, group)
-% Point estimate, SE, and p-value for a linear contrast c'*beta, using the
-% model's full coefficient covariance matrix so cross-term covariance
+% Point estimate, SE, and p-value for a linear contrast c'*beta, using the model's full coefficient covariance matrix so cross-term covariance
 % (e.g. between 'repetition' and 'repetition:haptic_num') isn't dropped.
     beta_hat = fe.Estimate;
     est      = c' * beta_hat;

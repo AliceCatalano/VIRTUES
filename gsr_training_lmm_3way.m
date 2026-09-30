@@ -1,66 +1,36 @@
 function results = gsr_training_lmm_3way(T, outcome, covariate_cols)
-% GSR_TRAINING_LMM_3WAY  Extends gsr_training_lmm.m's training-phase model
-% to test whether the Haptic-vs-no-Haptic difference in LEARNING RATE
-% (the repetition slope) itself depends on task difficulty (Level) --
-% i.e. whether "the 10 repetitions at Level 1 behave differently from the
-% 10 repetitions at Level 5," which the additive model in
-% gsr_training_lmm.m cannot answer (see that function's header: it fits
-% Haptic*Level and Haptic*Repetition as two SEPARATE two-way interactions
-% added together, which assumes -- without testing -- that the repetition
-% slope is the same size at every level).
+% GSR_TRAINING_LMM_3WAY  Extends gsr_training_lmm.m's training-phase model to test whether the Haptic-vs-no-Haptic difference in LEARNING RATE
+% itself depends on task difficulty (Level) --
+% i.e. whether "the 10 repetitions at Level 1 behave differently from the 10 repetitions at Level 5," which the additive model in
+% gsr_training_lmm.m cannot answer.
 %
 %   Y ~ Haptic * Level * Repetition + (1 + Repetition | Subject)
 %
-% This is a full three-way factorial in Haptic, Level (categorical, 5
-% levels), and Repetition (continuous 1-10, within-level trial index --
-% see plot_learning_curves.m's header for why this is NOT the subject's
-% overall 1-50 trial order). The new, three-way term
-% (haptic_num:level_cat:repetition) tests exactly the dependence the
-% reader asked about: does the group difference in repetition-slope
-% change across levels?
+% This is a full three-way factorial in Haptic, Level (categorical, 5 levels), and Repetition (continuous 1-10, within-level trial index --
+% see plot_learning_curves.m's header for why this is NOT the subject's overall 1-50 trial order). The new, three-way term
+% (haptic_num:level_cat:repetition) tests does the group difference in repetition-slope change across levels?
 %
-% Applied THE SAME WAY across all three modalities in this pipeline (GSR,
-% eye-tracking via direct reuse -- same pattern as gsr_training_lmm.m/
-% run_eye_lmms.m -- and performance via the sibling perf_training_lmm_3way.m),
-% per the explicit request that this test be consistent everywhere, not a
+% Applied THE SAME WAY across all three modalities in this pipeline (GSR, eye-tracking via direct reuse -- same pattern as gsr_training_lmm.m/
+% run_eye_lmms.m -- and performance via the sibling perf_training_lmm_3way.m), per the explicit request that this test be consistent everywhere, not a
 % one-off check on a single outcome.
 %
-% This is an EXPLORATORY extension of the SAP's literal Section 4.2
-% formula (which specifies the additive two-way model, not a three-way
-% one) -- report it as such, alongside (not instead of) the original
-% gsr_training_lmm.m results, which remain the literal confirmatory H1/H4
-% test and whose already-reported numbers are unaffected by this addition.
+% covariate_cols: same optional additive-covariate mechanism as gsr_training_lmm.m (see that function's header).
 %
-% covariate_cols: same optional additive-covariate mechanism as
-% gsr_training_lmm.m (see that function's header).
-%
-% RANDOM-EFFECTS STRUCTURE: unchanged from gsr_training_lmm.m -- maximal
-% (1 + repetition | subject) with the same degeneracy-detection fallback
-% to (1 | subject) + (repetition - 1 | subject). A random slope that also
-% varies by level (e.g. (1 + repetition | subject:level_cat)) was
-% considered and rejected here: with only 10 repetitions per subject per
-% level, that structure would need to estimate 5x as many subject-level
-% covariance parameters from the same amount of data per cell, and is far
-% more likely to be degenerate than the already-sometimes-degenerate
-% maximal structure this pipeline uses today. The fixed-effect three-way
-% term above is what tests the level-dependence question; the random
-% effects continue to describe only overall between-subject variation in
-% average level and overall (level-pooled) repetition slope.
+% RANDOM-EFFECTS STRUCTURE: unchanged from gsr_training_lmm.m -- maximal (1 + repetition | subject) with the same degeneracy-detection fallback
+% to (1 | subject) + (repetition - 1 | subject). A random slope that also varies by level (e.g. (1 + repetition | subject:level_cat)) was
+% considered and rejected here: with only 10 repetitions per subject per level, that structure would need to estimate 5x as many subject-level
+% covariance parameters from the same amount of data per cell, and is far more likely to be degenerate than the already-sometimes-degenerate
+% maximal structure this pipeline uses today. The fixed-effect three-way term above is what tests the level-dependence question; the random
+% effects continue to describe only overall between-subject variation in average level and overall (level-pooled) repetition slope.
 %
 % Returns results with the same fields as gsr_training_lmm.m PLUS:
-%   results.three_way_omnibus_F/p/DF1/DF2  - joint (Type III ANOVA) test
-%       of the whole haptic_num:level_cat:repetition term (4 df: one per
-%       non-reference level) -- THE primary number for "does difficulty
+% results.three_way_omnibus_F/p/DF1/DF2  - joint (Type III ANOVA) test of the whole haptic_num:level_cat:repetition term "does difficulty
 %       modulate the group learning-rate difference."
-%   results.three_way_terms   - table of the 4 individual per-level
-%       three-way coefficients (level k vs level 1), each with its own
+% results.three_way_terms - table of the 4 individual per-level three-way coefficients (level k vs level 1), each with its own
 %       beta/se/p, for follow-up once the omnibus test is significant.
-%   results.repetition_slopes - table of all 10 simple repetition slopes
-%       (5 levels x 2 groups), each with a proper SE/CI/p from the full
-%       coefficient covariance matrix -- this is the direct, per-level,
-%       per-group answer to "is the level-1 learning trend different from
-%       the level-5 learning trend," read straight off rather than
-%       inferred from the omnibus test alone.
+% results.repetition_slopes - table of all 10 simple repetition slopes, each with a proper SE/CI/p from the full
+%       coefficient covariance matrix -- this is the direct, per-level, per-group answer to "is the level-1 learning trend different from
+%       the level-5 learning trend," read straight off rather than inferred from the omnibus test alone.
 
     if nargin < 3, covariate_cols = {}; end
 
@@ -71,8 +41,7 @@ function results = gsr_training_lmm_3way(T, outcome, covariate_cols)
     end
 
     if height(Ttr) < 10
-        warning('gsr_training_lmm_3way: only %d usable rows for %s -- model may not be reliable', ...
-            height(Ttr), outcome);
+        warning('gsr_training_lmm_3way: only %d usable rows for %s -- model may not be reliable',height(Ttr), outcome);
     end
 
     Ttr.subject_cat = categorical(Ttr.subject);
@@ -112,12 +81,9 @@ function results = gsr_training_lmm_3way(T, outcome, covariate_cols)
     end
 
     % --- Individual per-level 3-way coefficients (level k vs level 1) ---
-    is_3way = cellfun(@(name) numel(strsplit(name, ':')) == 3 && ...
-        any(strcmp(strsplit(name, ':'), 'haptic_num')) && ...
-        any(strcmp(strsplit(name, ':'), 'repetition')) && ...
-        any(~cellfun('isempty', regexp(strsplit(name, ':'), '^level_cat_\d+$', 'once'))), fe.Name);
-    results.three_way_terms = table(fe.Name(is_3way), fe.Estimate(is_3way), fe.SE(is_3way), fe.pValue(is_3way), ...
-        'VariableNames', {'term','beta','se','p'});
+    is_3way = cellfun(@(name) numel(strsplit(name, ':')) == 3 && any(strcmp(strsplit(name, ':'), 'haptic_num')) && ...
+        any(strcmp(strsplit(name, ':'), 'repetition')) && any(~cellfun('isempty', regexp(strsplit(name, ':'), '^level_cat_\d+$', 'once'))), fe.Name);
+    results.three_way_terms = table(fe.Name(is_3way), fe.Estimate(is_3way), fe.SE(is_3way), fe.pValue(is_3way), 'VariableNames', {'term','beta','se','p'});
 
     results.outcome        = outcome;
     results.lme            = lme;
@@ -126,8 +92,7 @@ function results = gsr_training_lmm_3way(T, outcome, covariate_cols)
     results.re_diagnostic  = re_diag;
 
     % --- All 10 simple repetition slopes: 5 levels x 2 groups, each via a
-    % proper contrast on the full coefficient covariance matrix (same
-    % approach as gsr_training_lmm.m's local_add_contrast) ---
+    % proper contrast on the full coefficient covariance matrix (same approach as gsr_training_lmm.m's local_add_contrast) ---
     covb   = lme.CoefficientCovariance;
     dfe    = lme.DFE;
     nterms = numel(fe.Name);
@@ -166,8 +131,7 @@ function results = gsr_training_lmm_3way(T, outcome, covariate_cols)
         rows(end+1,:) = add_contrast(lvl, 'H', c);
     end
 
-    results.repetition_slopes = cell2table(rows, ...
-        'VariableNames', {'level','group','beta','se','t','df','p','lower','upper'});
+    results.repetition_slopes = cell2table(rows, 'VariableNames', {'level','group','beta','se','t','df','p','lower','upper'});
 end
 
 function row = local_add_contrast(fe, covb, dfe, c, label, group)
@@ -207,8 +171,7 @@ function [lme, re_structure, diag] = fit_lmm_with_re_fallback_3way(Ttr, formula_
         return;
     end
 
-    fprintf(['  [%s] maximal RE structure looks degenerate ' ...
-        '(corr=%.4f%s) -- refitting with uncorrelated intercept+slope\n'], ...
+    fprintf(['  [%s] maximal RE structure looks degenerate ' '(corr=%.4f%s) -- refitting with uncorrelated intercept+slope\n'], ...
         outcome, corr_max, local_ternary(isempty(warn_msg), '', sprintf(', warning: "%s"', warn_msg)));
 
     lastwarn('');

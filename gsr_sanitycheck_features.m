@@ -1,7 +1,5 @@
-%% sanity_check_features.m
-% Run after gsr_extract_features.m to catch structural/units problems
-% before feeding T into any LMM. Prints a report; produces a few plots.
-
+% sanity_check_features.m
+% Run after gsr_extract_features.m to catch structural/units problems before feeding T into any LMM. Prints a report; produces a few plots.
 clear; clc;
 cfg = config();
 
@@ -39,8 +37,7 @@ end
 %% 2. Group balance
 fprintf('\n=== Group balance ===\n');
 subj_group = unique(T(:, {'subject','haptic'}), 'rows');
-fprintf('Haptic=true subjects: %d   Haptic=false subjects: %d\n', ...
-    sum(subj_group.haptic), sum(~subj_group.haptic));
+fprintf('Haptic=true subjects: %d   Haptic=false subjects: %d\n', sum(subj_group.haptic), sum(~subj_group.haptic));
 
 %% 3. Duplicate acquisition rows
 fprintf('\n=== Duplicate check ===\n');
@@ -103,8 +100,7 @@ function check_range(T, varname, lo, hi, unit)
     bad = v < lo | v > hi;
     bad = bad & ~isnan(v);
     if any(bad)
-        fprintf('  [%s] %d/%d rows outside [%.2f, %.2f] %s\n', ...
-            varname, sum(bad), height(T), lo, hi, unit);
+        fprintf('  [%s] %d/%d rows outside [%.2f, %.2f] %s\n', varname, sum(bad), height(T), lo, hi, unit);
         bad_rows = T(bad, {'subject','phase','acquisition',varname});
         disp(bad_rows(1:min(10,height(bad_rows)), :));
         if height(bad_rows) > 10

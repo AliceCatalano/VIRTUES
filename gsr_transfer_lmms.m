@@ -1,8 +1,6 @@
 % run_transfer_lmms.m
-% Driver for the two pre/post transfer models sitting alongside the
-% training-phase models in run_training_lmms.m (whose actual file is
-% gsr_lmm.m -- naming mismatch inherited from that file, not repeated
-% here):
+% Driver for the two pre/post transfer models sitting alongside the training-phase models in run_training_lmms.m (whose actual file is
+% gsr_lmm.m -- naming mismatch inherited from that file, not repeated here):
 %
 %   SAP Section 4.3 -- elastic task, Baseline1 (pre-training) vs
 %     Baseline2 (post-training): tests H2, "superior transfer in the
@@ -61,8 +59,7 @@ for f = 1:numel(families)
     p_vals = cellfun(@(r) r.interaction_p, results);
     p_fdr  = local_bh_fdr(p_vals);
 
-    fprintf('\n=== Summary: Phase x Haptic interaction, %s vs %s (%s) ===\n', ...
-        fam.phase_pre, fam.phase_post, fam.sap_section);
+    fprintf('\n=== Summary: Phase x Haptic interaction, %s vs %s (%s) ===\n', fam.phase_pre, fam.phase_post, fam.sap_section);
     fprintf('%-25s %10s %10s %10s %10s\n', 'Outcome', 'beta', 'SE', 'p', 'p_FDR');
     for i = 1:numel(outcomes)
         r = results{i};

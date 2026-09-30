@@ -4,6 +4,7 @@
 %   Row 1: Accelerometer magnitude (L=blue, R=red)
 %   Row 2: Raw audio signal (not RMS) — shows the actual waveform
 %   Row 3: Raw GSR (µS)
+% There should be a baseline removal section before sendin the data to Row4
 %   Row 4: cvxEDA tonic (SCL, blue) + phasic (SCR, red) on dual y-axis
 %
 % Background shading encodes EDA response:
@@ -21,7 +22,7 @@ cfg = config();
 % PARAMETERS
 pre_win    = 2.0;   % s before collision
 post_win   = 10.0;  % s after  collision
-scr_win    = 5.0;   % s — SCR search window
+scr_win    = 8.0;   % s — SCR search window
 scl_start  = 2.0;   % s — tonic window start
 scl_end    = 8.0;   % s — tonic window end
 
@@ -111,7 +112,7 @@ for si = 1:numel(cfg.all_subjects)
 
             ds = max(1,round(fs_acc/TARGET_FS));
             [mag_L_ds, t_acc_ds] = aa_ds(mag_L, t_acc, fs_acc, TARGET_FS, 4, ds);
-            [mag_R_ds, ~        ] = aa_ds(mag_R, t_acc, fs_acc, TARGET_FS, 4, ds);
+            [mag_R_ds, ~] = aa_ds(mag_R, t_acc, fs_acc, TARGET_FS, 4, ds);
 
             %% Load audio → bandpass, keep raw waveform (not RMS)
             U       = load(audio_path);   AUDIO = U.AUDIO;
@@ -126,8 +127,7 @@ for si = 1:numel(cfg.all_subjects)
             audio_sig = bp_max(AUDIO.data(:,idx), fs_aud, AUDIO_BP_LOW, AUDIO_BP_HIGH);
 
             % Per-collision EDA response assessment
-            responses = assess_responses(t_gsr, tonic, phasic, coll_t, ...
-                pre_win, scr_win, scl_start, scl_end, noise_floor);
+            responses = assess_responses(t_gsr, tonic, phasic, coll_t, pre_win, scr_win, scl_start, scl_end, noise_floor);
 
             % Create figure: n_rows rows × n_coll columns
             n_cols   = n_coll;
@@ -136,11 +136,8 @@ for si = 1:numel(cfg.all_subjects)
             fig = figure('Visible','off','Position',[0 0 fig_w fig_h]);
 
             % Pre-compute shared y-limits per row across all collisions
-            ylims = compute_shared_ylims(n_rows, n_coll, coll_t, ...
-                t_acc_ds, mag_L_ds, mag_R_ds, ...
-                t_aud,    audio_sig, ...
-                t_gsr,    gsr_us, tonic, phasic, ...
-                pre_win,  post_win);
+            ylims = compute_shared_ylims(n_rows, n_coll, coll_t,t_acc_ds, mag_L_ds, mag_R_ds, ...
+                t_aud,    audio_sig, t_gsr,    gsr_us, tonic, phasic, pre_win,  post_win);
 
             %% Fill panels
             for ci = 1:n_coll
@@ -163,8 +160,7 @@ for si = 1:numel(cfg.all_subjects)
                 shade_post(ax1, post_win, bg);
                 ylim(ax1, ylims(1,:));
                 if ci==1, ylabel(ax1,'|accel| (g)','FontSize',7); end
-                title(ax1, sprintf('#%d  t=%.2fs\ng=%.2f  aud=%.4f', ...
-                    ci, t0, peak_g(ci), peak_aud(ci)), 'FontSize',7);
+                title(ax1, sprintf('#%d  t=%.2fs\ng=%.2f  aud=%.4f', ci, t0, peak_g(ci), peak_aud(ci)), 'FontSize',7);
                 grid(ax1,'on'); box(ax1,'on');
                 set(ax1,'XTickLabel',{});
 
@@ -200,8 +196,7 @@ for si = 1:numel(cfg.all_subjects)
                 % Baseline mean
                 bl_mask = (t_gsr >= t0-pre_win) & (t_gsr < t0);
                 if any(bl_mask)
-                    yline(ax4, mean(tonic(bl_mask)), '--', 'Color',[0.2 0.5 0.8], ...
-                        'LineWidth',0.8, 'HandleVisibility','off');
+                    yline(ax4, mean(tonic(bl_mask)), '--', 'Color',[0.2 0.5 0.8],'LineWidth',0.8, 'HandleVisibility','off');
                 end
                 if ci==1, ylabel(ax4,'Tonic (µS)','FontSize',7,'Color',[0.2 0.5 0.8]); end
                 ylim(ax4, ylims(4,:));
@@ -212,8 +207,7 @@ for si = 1:numel(cfg.all_subjects)
                 plot_seg(ax4, t_gsr, phasic, t0, pre_win, post_win, [0.9 0.3 0.1], 'SCR');
 
                 % Noise floor
-                yline(ax4, noise_floor, ':', 'Color',[0.6 0.6 0.6], ...
-                    'LineWidth',1, 'HandleVisibility','off');
+                yline(ax4, noise_floor, ':', 'Color',[0.6 0.6 0.6],'LineWidth',1, 'HandleVisibility','off');
 
                 % SCR peak marker
                 scr_mask = (t_gsr >= t0) & (t_gsr < t0+scr_win);
@@ -222,11 +216,9 @@ for si = 1:numel(cfg.all_subjects)
                     seg_p = phasic(scr_mask);
                     [pk,pi] = max(seg_p);
                     if pk > noise_floor
-                        plot(ax4, seg_t(pi), pk, 'g^', 'MarkerSize',8, ...
-                            'MarkerFaceColor',[0.1 0.8 0.1], 'HandleVisibility','off');
+                        plot(ax4, seg_t(pi), pk, 'g^', 'MarkerSize',8, 'MarkerFaceColor',[0.1 0.8 0.1], 'HandleVisibility','off');
                     else
-                        plot(ax4, seg_t(pi), pk, 'v', 'MarkerSize',6, ...
-                            'Color',[0.5 0.5 0.5], 'MarkerFaceColor',[0.8 0.8 0.8], ...
+                        plot(ax4, seg_t(pi), pk, 'v', 'MarkerSize',6, 'Color',[0.5 0.5 0.5], 'MarkerFaceColor',[0.8 0.8 0.8], ...
                             'HandleVisibility','off');
                     end
                 end
@@ -240,8 +232,7 @@ for si = 1:numel(cfg.all_subjects)
                     yyaxis(ax4,'left');
                     dscl = mean(tonic(scl_mask)) - mean(tonic(bl_mask));
                     text(ax4, post_win*0.7, ylims(4,2)*0.9, ...
-                        sprintf('ΔSCL\n%.3f', dscl), 'FontSize',6, ...
-                        'Color',[0.2 0.5 0.8], 'HorizontalAlignment','center');
+                        sprintf('ΔSCL\n%.3f', dscl), 'FontSize',6, 'Color',[0.2 0.5 0.8], 'HorizontalAlignment','center');
                 end
 
                 ref_lines(ax4, scr_win, scl_start, scl_end);
@@ -251,10 +242,8 @@ for si = 1:numel(cfg.all_subjects)
 
                 % Response label at bottom
                 resp_str = response_label(resp);
-                text(ax4, 0.5, 0.02, resp_str, 'Units','normalized', ...
-                    'FontSize',7, 'FontWeight','bold', ...
-                    'HorizontalAlignment','center', 'VerticalAlignment','bottom', ...
-                    'Color', response_color(resp));
+                text(ax4, 0.5, 0.02, resp_str, 'Units','normalized', 'FontSize',7, 'FontWeight','bold', ...
+                    'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'Color', response_color(resp));
             end
 
             % Supertitle
@@ -299,8 +288,7 @@ function shade_post(ax, post_win, bg)
         'FaceAlpha',0.25, 'EdgeColor','none', 'HandleVisibility','off');
 end
 
-function responses = assess_responses(t_gsr, tonic, phasic, coll_t, ...
-        pre_win, scr_win, scl_start, scl_end, noise_floor)
+function responses = assess_responses(t_gsr, tonic, phasic, coll_t, pre_win, scr_win, scl_start, scl_end, noise_floor)
     n = numel(coll_t);
     responses = struct('scr',false,'scl',false,'scr_amp',NaN,'scr_lat',NaN,'scl_change',NaN);
     responses = repmat(responses,n,1);
@@ -350,11 +338,8 @@ function c = response_color(resp)
     end
 end
 
-function ylims = compute_shared_ylims(n_rows, n_coll, coll_t, ...
-        t_acc_ds, mag_L_ds, mag_R_ds, ...
-        t_aud,    audio_sig, ...
-        t_gsr,    gsr_us, tonic, phasic, ...
-        pre_win,  post_win)
+function ylims = compute_shared_ylims(n_rows, n_coll, coll_t, t_acc_ds, mag_L_ds, mag_R_ds, ...
+        t_aud,    audio_sig,t_gsr,    gsr_us, tonic, phasic, pre_win,  post_win)
 % Returns [n_rows+1 x 2] matrix of shared y-limits across all collisions
 % Row 5 = phasic (separate right axis)
     ylims = NaN(n_rows+1, 2);
@@ -363,8 +348,7 @@ function ylims = compute_shared_ylims(n_rows, n_coll, coll_t, ...
     for ci = 1:n_coll
         t0 = coll_t(ci);
         collectors{1} = [collectors{1}; ...
-            seg(t_acc_ds, mag_L_ds, t0, pre_win, post_win); ...
-            seg(t_acc_ds, mag_R_ds, t0, pre_win, post_win)];
+            seg(t_acc_ds, mag_L_ds, t0, pre_win, post_win); seg(t_acc_ds, mag_R_ds, t0, pre_win, post_win)];
         collectors{2} = [collectors{2}; seg(t_aud,   audio_sig, t0, pre_win, post_win)];
         collectors{3} = [collectors{3}; seg(t_gsr,   gsr_us,    t0, pre_win, post_win)];
         collectors{4} = [collectors{4}; seg(t_gsr,   tonic,     t0, pre_win, post_win)];

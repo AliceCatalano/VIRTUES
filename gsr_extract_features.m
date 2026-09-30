@@ -1,42 +1,27 @@
 function [T, T_coll] = gsr_extract_features(cfg)
-% GSR_EXTRACT_FEATURES  Build long-format EDA outcome tables (SAP Section 3.3)
-% ready for the mixed-effects models in Section 4.
-%
+% GSR_EXTRACT_FEATURES  Build long-format EDA outcome tables (SAP Section 3.3) ready for the mixed-effects models in Section 4.
 % Returns:
-%   T      - block-level table, one row per subject x phase x acquisition
-%            (i.e. per Level for Baseline/Test phases, per Repetition for
-%            training level_L* phases). Columns match cfg.amplitude_features
-%            plus scr_freq, collision-derived summaries, and grouping vars.
-%   T_coll - collision-level table, one row per individual collision, for
-%            the time-resolved / growth-curve analyses mentioned in 3.3.
+% T - block-level table, one row per subject x phase x acquisition. Columns match cfg.amplitude_features
+%     plus scr_freq, collision-derived summaries, and grouping vars.
+% T_coll - collision-level table, one row per individual collision, for the time-resolved / growth-curve analyses mentioned in 3.3.
 %
-% Both tables are also saved to cfg.output_root as .mat and .csv.
+% Both tables are also saved to cfg.output_root as .mat.
 %
 % - Subject ID suffix 'H' = Haptic Feedback (HF) group, 'N' = No Haptic Feedback (NHF).
-%   - Each acquisition is bounded to its own TRIAL_START/TRIAL_END window
-%     via safe_trial_window.m (reading that acquisition's events.mat)
-%     before any signal processing -- acquisitions without a resolvable
-%     trial window (missing events.mat, or no TRIAL_START/END found) are
-%     skipped rather than processed over their full unwindowed recording.
-%   - cfg.scr_min_dist is in SAMPLES at cfg.fs_target, not seconds.
-%     (Not confirmed -- using samples as the stated default. If your SCR
-%     counts look implausibly high/low, check this first: at fs_target=10Hz,
-%     10 samples = 1s minimum peak spacing.)
-%   - SCR detection uses only the fixed criteria cfg.scr_min_amp /
-%     cfg.scr_min_dist -- no adaptive/data-driven noise floor.
-%   - "Event-locked SCR amplitude" (block-level) = mean of per-collision
-%     peak phasic amplitude within a 5s post-collision window, matching
+% - Each acquisition is bounded to its own TRIAL_START/TRIAL_END window before any signal processing -- acquisitions without a resolvable
+%     trial window are skipped rather than processed over their full unwindowed recording.
+% - cfg.scr_min_dist is in SAMPLES at cfg.fs_target, not seconds. Not confirmed -- using samples as the stated default. If your SCR
+%     counts look implausibly high/low, check this first: at fs_target=10Hz, 10 samples = 1s minimum peak spacing.)
+% - SCR detection uses only the fixed criteria cfg.scr_min_amp / cfg.scr_min_dist -- no adaptive/data-driven noise floor.
+% - "Event-locked SCR amplitude"= mean of per-collision peak phasic amplitude within a 5s post-collision window, matching
 %     the search window already used in gsr_collision_overview.m.
-%   - scl_mean_bc / scl_mean_pctchg / gsr_mean_bc / gsr_mean_pctchg are
-%     baseline-corrected against the subject's resting-state reference
-%     (gsr_rest_baseline.m), computed once per subject. NaN if no valid
-%     R1 resting recording was found for that subject. SCR
-%     amplitude/frequency columns are NOT baseline-corrected (resting
-%     phasic activity is near-zero/undefined, so this isn't standard
+% - scl_mean_bc / scl_mean_pctchg / gsr_mean_bc / gsr_mean_pctchg are baseline-corrected against the subject's resting-state reference
+%     (gsr_rest_baseline.m), computed once per subject. NaN if no valid R1 resting recording was found for that subject. SCR
+%     amplitude/frequency columns are NOT baseline-corrected (resting phasic activity is near-zero/undefined, so this isn't standard
 %     practice for those measures).
-%   - Demographic covariates (age, gender, handedness, gaming/robotic experience -- SAP Section 6) are NOT included: no demographics file
+% - Demographic covariates (age, gender, handedness, gaming/robotic experience -- SAP Section 6) are NOT included: no demographics file
 %     has been supplied. Join one onto T by 'subject' before fitting your final confirmatory models if you want those covariates included.
-%   - Baseline acquisitions ('Level1'..'Level5') are each single, unrepeated trials, so 'repetition' is NaN for those rows.
+% - Baseline acquisitions ('Level1'..'Level5') are each single, unrepeated trials, so 'repetition' is NaN for those rows.
 %     Test (Peg Transfer) acquisitions have no Level subdivision at all -- Test1/Test2 hold their sensor files directly, with
 %     no acquisition subfolder underneath, so both 'level' and 'repetition' are NaN for those rows (see the phase-branching
 %     logic below for how this differs from Baseline's Level1..Level5 structure)
@@ -48,13 +33,10 @@ function [T, T_coll] = gsr_extract_features(cfg)
     for si = 1:numel(cfg.all_subjects)
         subj     = cfg.all_subjects{si};
         group    = subj(end);           % 'H' or 'N'
-        haptic   = strcmp(group, 'H');  % see ASSUMPTIONS
+        haptic   = strcmp(group, 'H'); 
         subj_dir = fullfile(cfg.data_root, subj);
 
-        % Resting-state baseline: computed once per subject (not once per
-        % acquisition -- previously gsr_preprocess recomputed this from
-        % scratch, including a full cvxEDA re-optimization, on every single
-        % acquisition, which was both wasted work and never actually used).
+        % Resting-state baseline: computed once per subject.
         rest_ref = gsr_rest_baseline(subj, cfg);
         has_rest_ref = ~isempty(rest_ref);
         if ~has_rest_ref
@@ -127,13 +109,9 @@ function [T, T_coll] = gsr_extract_features(cfg)
                 if numel(t_gsr) < 2, continue; end
                 duration_s = t_gsr(end) - t_gsr(1);
 
-                % --- SCR peak detection ---
-                % Fixed detection criteria only (cfg.scr_min_amp,
-                % cfg.scr_min_dist) -- no adaptive/computed noise floor.
-                [pk_vals, ~] = findpeaks(phasic, ...
-                    'MinPeakHeight',     cfg.scr_min_amp, ...
-                    'MinPeakProminence', cfg.scr_min_amp, ...
-                    'MinPeakDistance',   cfg.scr_min_dist);
+                % SCR peak detection ---
+                % Fixed detection criteria only (cfg.scr_min_amp, cfg.scr_min_dist) -- no adaptive/computed noise floor.
+                [pk_vals, ~] = findpeaks(phasic, 'MinPeakHeight', cfg.scr_min_amp,'MinPeakProminence', cfg.scr_min_amp,'MinPeakDistance',cfg.scr_min_dist);
 
                 n_scr = numel(pk_vals);
                 if duration_s > 0
@@ -161,10 +139,8 @@ function [T, T_coll] = gsr_extract_features(cfg)
                 pp_trial  = polyfit(t_gsr, tonic, 1);
                 scl_slope = pp_trial(1);
 
-                % --- Baseline-corrected SCL/GSR (delta and % change from
-                % resting reference). Only tonic-level measures are baseline-corrected here: SCR amplitude/frequency during
-                % quiet rest is near-zero/undefined, so subtracting a resting phasic value is not standard practice (Boucsein,
-                % 2012) and is intentionally not done for those columns.
+                % --- Baseline-corrected SCL/GSR (delta and % change from resting reference). Only tonic-level measures are baseline-corrected here: 
+                % SCR amplitude/frequency during quiet rest is near-zero/undefined, so subtracting a resting phasic value is not standard practice.
                 if has_rest_ref
                     scl_mean_bc     = scl_mean - rest_ref.tonic_mean;
                     scl_mean_pctchg = 100 * scl_mean_bc / rest_ref.tonic_mean;
@@ -233,16 +209,12 @@ function [T, T_coll] = gsr_extract_features(cfg)
     T = cell2table(rows, 'VariableNames', varnames);
     if height(T) > 0, T.haptic = logical(T.haptic); end
 
-    coll_varnames = {'subject','group','haptic','phase_type','phase','acquisition', ...
-        'level','repetition','collision_idx','collision_t','scr_amp','scr_response'};
+    coll_varnames = {'subject','group','haptic','phase_type','phase','acquisition', 'level','repetition','collision_idx','collision_t','scr_amp','scr_response'};
     T_coll = cell2table(coll_rows, 'VariableNames', coll_varnames);
     if height(T_coll) > 0, T_coll.haptic = logical(T_coll.haptic); end
 
     if ~exist(cfg.output_root, 'dir'), mkdir(cfg.output_root); end
     save(fullfile(cfg.output_root, 'eda_features.mat'), 'T', 'T_coll');
-    writetable(T,      fullfile(cfg.output_root, 'eda_features_blocklevel.csv'));
-    writetable(T_coll, fullfile(cfg.output_root, 'eda_features_collisionlevel.csv'));
-
-    fprintf('\nSaved block-level table (%d rows) and collision-level table (%d rows) to %s\n', ...
-        height(T), height(T_coll), cfg.output_root);
+    
+    fprintf('\nSaved block-level table (%d rows) and collision-level table (%d rows) to %s\n', height(T), height(T_coll), cfg.output_root);
 end

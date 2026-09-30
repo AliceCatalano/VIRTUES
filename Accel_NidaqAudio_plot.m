@@ -5,10 +5,10 @@
 %
 % Run with a clean workspace (clear all) to avoid stale-variable time axis bugs.
 
-clear; clc; close all;
+clear; clc;
 
 output_root    = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
-mat_folder     = fullfile(output_root, 'subject_s07N', 'Test1'); %, 'Level1'
+mat_folder     = fullfile(output_root, 'subject_s27N', 'level_L5/rep_10'); %, 'Level1'
 
 bp_lo = 80; bp_hi = 1000;
 
@@ -98,7 +98,7 @@ if has_audio
     audio.zL = get_channel(AUDIO, 'ch14');
     audio.xR = get_channel(AUDIO, 'ch16');
     audio.yR = get_channel(AUDIO, 'ch17');
-    audio.zR = get_channel(AUDIO, 'ch18');
+    audio.zR = get_channel(AUDIO, 'ch17');
     audio.t  = AUDIO.time_rel;
     audio_fs = AUDIO.fs_estimated;
 end
@@ -126,7 +126,7 @@ end
 chan_names  = {'xL','yL','zL','xR','yR','zR'};
 side_labels = {'Left','Left','Left','Right','Right','Right'};
 axis_labels = {'X','Y','Z','X','Y','Z'};
-plot_raw6(accel.t, accel, chan_names, side_labels, axis_labels, event_times, 'Raw NIDAQ Accelerometer — All 6 Axes');
+% plot_raw6(accel.t, accel, chan_names, side_labels, axis_labels, event_times, 'Raw NIDAQ Accelerometer — All 6 Axes');
 if has_audio
     plot_raw6(audio.t, audio, chan_names, side_labels, axis_labels, event_times, 'Raw Audiomixer Accelerometer — All 6 Axes');
 end
@@ -153,8 +153,7 @@ if has_audio
         c = c{1};
         n = min(numel(accel.(c)), numel(audio.(c)));
         d = corrcoef(accel.(c)(1:n), audio.(c)(1:n));
-        fprintf('  %-3s : samples nidaq=%d audiomixer=%d  corr=%.3f\n', ...
-            c, numel(accel.(c)), numel(audio.(c)), d(1,2));
+        fprintf('  %-3s : samples nidaq=%d audiomixer=%d  corr=%.3f\n', c, numel(accel.(c)), numel(audio.(c)), d(1,2));
     end
 end
 

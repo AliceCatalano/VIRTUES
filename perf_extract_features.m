@@ -1,49 +1,22 @@
 function T = perf_extract_features(cfg)
-% PERF_EXTRACT_FEATURES  Build a long-format performance-outcome table
-% (SAP Section 3.1) in the same row/column convention as
-% gsr_extract_features.m's T (subject, group, haptic, phase_type, phase,
-% acquisition, level, repetition, ...), so the same modeling code
-% (perf_training_lmm.m / perf_transfer_lmm.m) can be reused for both
-% physiological and performance outcomes with the same rigor.
+% PERF_EXTRACT_FEATURES  Build a long-format performance-outcome table in the same row/column convention as
+% gsr_extract_features.m's T (subject, group, haptic, phase_type, phase, acquisition, level, repetition, ...), so the same modeling code
+% (perf_training_lmm.m / perf_transfer_lmm.m) can be reused for both physiological and performance outcomes with the same rigor.
 %
 % IMPLEMENTED (real, computed from data):
-%   duration_s    - task completion time (SAP 3.1 "Task completion time").
-%                   Computed via safe_trial_window.m on each acquisition's
-%                   events.mat, the SAME trial-window logic already used by
-%                   gsr_extract_features.m -- i.e. performance and
-%                   physiological outcomes share identical trial
-%                   boundaries per acquisition, not two independently
-%                   re-derived windows. (DurationMatrices.m re-derives its
-%                   own window from events.csv instead; that duplicate
-%                   logic is not used here on purpose, to keep one
-%                   authoritative trial-window definition across the whole
-%                   pipeline.)
-%   n_collisions  - collision count (SAP 3.1 "Collision count"). Identical
-%                   extraction to the n_coll computed inside
-%                   gsr_extract_features.m (same collision_results.mat,
-%                   same field), just also saved into its own standalone
-%                   performance table so it doesn't require rerunning the
-%                   (much slower) GSR preprocessing to analyze on its own.
+% duration_s- task completion time (SAP 3.1 "Task completion time").Computed via safe_trial_window.m on each acquisition's
+% events.mat, the SAME trial-window logic already used bygsr_extract_features.m -- i.e. performance and
+% physiological outcomes share identical trial boundaries per acquisition, not two independently
+% re-derived windows. (DurationMatrices.m re-derives its own window from events.csv instead; that duplicate
+% logic is not used here on purpose, to keep one authoritative trial-window definition across the whole pipeline.)
+% n_collisions  - collision count (SAP 3.1 "Collision count"). Identical extraction to the n_coll computed inside
+% gsr_extract_features.m (same collision_results.mat, same field), just also saved into its own standalone
+% performance table so it doesn't require rerunning the (much slower) GSR preprocessing to analyze on its own.
 %
 % NOT YET IMPLEMENTED (SAP 3.1 outcomes with no existing extraction code
 % anywhere in this repo -- left as NaN, not fabricated):
 %   error_count   - elastic losses/breaks. Needs an agreed event label in
-%                   events.mat (e.g. an 'ELASTIC_BREAK' marker) to count;
-%                   none currently exists in the event schema used by
-%                   convert2mat.m/safe_trial_window.m.
-%   task_success  - binary success/failure. Needs a per-trial outcome
-%                   marker (event label, or a rule applied to error_count)
-%                   that isn't logged yet.
-%   mean_force / peak_force - needs force.mat (saved by convert2mat.m,
-%                   FORCE.data / FORCE.channel_names) read and reduced
-%                   per-trial the same way gsr_preprocess.m windows GSR --
-%                   not yet written. If you want this added, the pattern
-%                   is identical to duration_s below: load force.mat for
-%                   the acquisition, mask to [t_start, t_end] via
-%                   safe_trial_window, then mean()/max() the relevant
-%                   channel(s).
-%
-% Saved to cfg.output_root as perf_features.mat and perf_features.csv.
+% Saved to cfg.output_root as perf_features.mat=
 
     all_phases = [cfg.baseline_phases, cfg.training_levels, cfg.test_phases];
     rows = {};
@@ -150,7 +123,6 @@ function T = perf_extract_features(cfg)
 
     if ~exist(cfg.output_root, 'dir'), mkdir(cfg.output_root); end
     save(fullfile(cfg.output_root, 'perf_features.mat'), 'T');
-    writetable(T, fullfile(cfg.output_root, 'perf_features.csv'));
     fprintf('\nSaved performance table (%d rows) to %s\n', height(T), cfg.output_root);
 end
 

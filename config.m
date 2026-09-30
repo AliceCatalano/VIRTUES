@@ -1,9 +1,9 @@
 function cfg = config()
     cfg.data_root   = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
     cfg.output_root = fullfile(expanduser('~'), 'Desktop/Virtues_Data', 'GSR_Analysis');
-    raw_list = {'s02N','s05N','s07N','s09N','s11N','s14N','s15H','s16N','s18N','s20N','s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N', ...
-'s42N','s43N','s44N','s46N','s48N', 's03H','s04H','s06H','s08H','s10H','s12H','s13H','s17H','s19H','s21H', ...
-'s23H','s25H','s26H','s29H','s31H','s33H','s35H','s38H','s40H','s41H', 's45H','s47H'};  %{'s44N','s46N','s45H','s47H'}
+    raw_list = {'s02N','s05N','s07N','s09N','s11N','s14N','s16N','s18N','s20N','s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N','s42N','s43N','s44N','s46N','s48N',... 
+         's03H','s04H','s06H','s08H','s10H','s12H','s13H','s15H','s17H','s19H','s21H', 's23H','s25H','s26H','s29H','s31H','s33H','s35H','s38H','s40H','s41H', 's45H','s47H'};  %{'s44N','s46N','s45H','s47H'}
+    cfg.force_cal_path = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data', 'FT29125.cal');
     cfg.all_subjects = cellfun(@(s) ['subject_' s], raw_list, 'UniformOutput', false);
     cfg.subjects_H = cfg.all_subjects(cellfun(@(s) s(end) == 'H', cfg.all_subjects));
     cfg.subjects_N = cfg.all_subjects(cellfun(@(s) s(end) == 'N', cfg.all_subjects));
@@ -29,8 +29,10 @@ function cfg = config()
     cfg.eye_saccade_k_mad = 5;     % velocity threshold = median + k*MAD
     cfg.nidaq_fs = 3000;   % Hz, force + accelerometer sampling rate
     cfg.force_noise_k_mad = 2.5;
-    cfg.tssv_noise_threshold_ms2    = 0.21;   % m/s^2, per the TSSV method being followed
-    cfg.accel_sensitivity_ms2_per_V = 0.4;
+    cfg.tssv_noise_threshold_ms2 = 0.0714;  % 3-sigma from ADXL356 noise density = 80e-6 g/sqrt(Hz) * 9.81 * sqrt(920 Hz bandwidth) * 3
+    cfg.accel_sensitivity_ms2_per_V = 24.525;   % 9.80665 / 0.4 V/g (datasheet typical sensitivity)
+    cfg.accel_max_pct_missing = 5.0;  % exclude accel trial if >5% samples missing in window
+
 end
 function p = expanduser(p)
 if strncmp(p,'~',1)

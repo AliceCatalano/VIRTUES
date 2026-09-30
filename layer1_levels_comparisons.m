@@ -1,44 +1,28 @@
 function results = layer1_levels_comparisons(cfg)
-% LAYER1_LEVELS_COMPARISONS  Simple, transparent difficulty-level
-% comparisons for the training phase (5 levels x 10 repetitions),
-% mirroring layer1_simple_comparisons.m's Baseline1/2 and Test1/2 logic
-% but restructured for a 5-level factor instead of a 2-phase factor, per
-% the researcher's explicit structure:
-%   "within-group, between group and within levels and later between
-%    levels"
+% LAYER1_LEVELS_COMPARISONS  Simple, transparent difficulty-level comparisons for the training phase (5 levels x 10 repetitions),
+% mirroring layer1_simple_comparisons.m's Baseline1/2 and Test1/2 logic but restructured for a 5-level factor instead of a 2-phase factor, per
+% "within-group, between group and within levels and later betweenlevels"
 %
-% "Full repetition" (Layer1): each subject contributes ONE value per
-% LEVEL per outcome, averaged across all 10 repetitions within that
+% "Full repetition" (Layer1): each subject contributes ONE value per LEVEL per outcome, averaged across all 10 repetitions within that
 % level (not collision-restricted -- that is Layer2).
 %
 % FOUR comparison tables, matching each phrase in the requested structure:
 %
-%   1. within_group_pairwise (Name: "within levels", read as: within each
-%      group, does the outcome differ between levels?) -- for N and H
-%      separately: paired Level_k vs Level_1 (k=2..5), t-test + Wilcoxon
-%      signed-rank, PLUS an omnibus Friedman test across all 5 levels
-%      (one row per group in omnibus_within_group). Level 1 (easiest) is
-%      the reference, matching the "level k vs level 1" contrast
-%      convention already used in plot_level_divergence.m / the LMM
-%      results tables.
+% 1. within_group_pairwise ("within levels": within each group, does the outcome differ between levels?) -- for N and H
+%      separately: paired Level_k vs Level_1 (k=2..5), t-test + Wilcoxon signed-rank, PLUS an omnibus Friedman test across all 5 levels
+%      (one row per group in omnibus_within_group). Level 1 (easiest) is the reference, matching the "level k vs level 1" contrast
+%      convention already used in plot_level_divergence.m / the LMMresults tables.
 %
-%   2. between_group_per_level ("between group") -- at each of the 5
-%      levels separately: independent-samples N vs H, t-test + Wilcoxon
-%      rank-sum.
+%2. between_group_per_level at each of the 5 levels separately: independent-samples N vs H, t-test + Wilcoxon rank-sum.
 %
-%   3. between_levels_pooled ("between levels", both groups combined) --
-%      Level_k vs Level_1 (k=2..5), paired t-test + Wilcoxon signed-rank,
-%      pooling N and H together, PLUS one pooled omnibus Friedman test
-%      per outcome (omnibus_pooled) -- this is "does difficulty matter at
+% 3. between_levels_pooled ("between levels", both groups combined) Level_k vs Level_1 (k=2..5), paired t-test + Wilcoxon signed-rank,
+%      pooling N and H together, PLUS one pooled omnibus Friedman test per outcome (omnibus_pooled) -- this is "does difficulty matter at
 %      all," independent of group.
 %
-% Same outcome list and FDR-within-family logic as
-% layer1_simple_comparisons.m: BH-FDR applied separately within each of
-% the pairwise/omnibus table types (across the 11 outcomes x however many
-% rows that table type has), not pooled across table types.
-%
-% Saved to cfg.output_root/layer1_levels_results.mat (+ .csv per table).
+% Same outcome list and FDR-within-family logic as layer1_simple_comparisons.m: BH-FDR applied separately within each of
+% the pairwise/omnibus table types (across the 11 outcomes x however many rows that table type has), not pooled across table types.
 
+% Saved to cfg.output_root/layer1_levels_results.mat 
     sources = local_load_sources(cfg);
     outcome_list = {
         'scl_mean',          sources.eda
@@ -84,22 +68,19 @@ function results = layer1_levels_comparisons(cfg)
             sel = local_ternary(strcmp(g,'H'), is_h, ~is_h);
             X = subj_by_level(sel, :);
             for k = 2:n_levels
-                pairwise_rows.(sprintf('within_%s', g))(end+1,:) = ...
-                    local_paired_row(outcome, k, X(:,1), X(:,k));
+                pairwise_rows.(sprintf('within_%s', g))(end+1,:) = local_paired_row(outcome, k, X(:,1), X(:,k));
             end
             omnibus_rows.(sprintf('within_%s', g))(end+1,:) = local_friedman_row(outcome, X);
         end
 
         % ---- 2. Between-group at each level ----
         for lv = 1:n_levels
-            between_group_rows(end+1,:) = local_indep_row(outcome, lv, ...
-                subj_by_level(~is_h, lv), subj_by_level(is_h, lv)); %#ok<AGROW>
+            between_group_rows(end+1,:) = local_indep_row(outcome, lv, subj_by_level(~is_h, lv), subj_by_level(is_h, lv)); %#ok<AGROW>
         end
 
         % ---- 3. Between levels, pooled across groups ----
         for k = 2:n_levels
-            pairwise_rows.between_pooled(end+1,:) = ...
-                local_paired_row(outcome, k, subj_by_level(:,1), subj_by_level(:,k));
+            pairwise_rows.between_pooled(end+1,:) = local_paired_row(outcome, k, subj_by_level(:,1), subj_by_level(:,k));
         end
         omnibus_rows.pooled(end+1,:) = local_friedman_row(outcome, subj_by_level);
     end
