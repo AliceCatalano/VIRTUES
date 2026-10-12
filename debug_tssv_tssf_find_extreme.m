@@ -64,7 +64,6 @@ for mi=1:2
             strrep(s{1},'subject_',''),min(v),exp(min(v)),max(v),exp(max(v)));
     end
 end
-%%
 %% what_was_removed_and_why.m
 clear; clc; cfg = config();
 FV_raw   = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T'); Traw=FV_raw.T;
@@ -118,5 +117,65 @@ for mi=1:2
             log_val,r.(oc),reason);
     end
 end
+%% tssf_tssv_range_without_excluded.m
+clear; clc; cfg = config();
+FV = load(fullfile(cfg.output_root,'force_vibration_features_clean.mat'),'T'); T=FV.T;
 
+excl_tssv = {'subject_s09N','subject_s10H','subject_s11N','subject_s12H','subject_s23H','subject_s44N','subject_s48N'};
+excl_tssf = {'subject_s03H','subject_s04H'};
+
+fprintf('=== TSSV range (non-excluded subjects only, after cleaning) ===\n');
+Tv = T(isfinite(T.tssv)&T.tssv>0&~ismember(T.subject,excl_tssv),:);
+Tv = sortrows(Tv, 'tssv', 'ascend');
+fprintf('n valid rows: %d\n', height(Tv));
+fprintf('MIN: %s / %s / %s / rep%d  log=%.3f  raw=%.4f (m/s²)²s\n',...
+    strrep(Tv.subject{1},'subject_',''), Tv.phase{1}, Tv.acquisition{1}, ...
+    Tv.repetition(1), log(Tv.tssv(1)), Tv.tssv(1));
+fprintf('MAX: %s / %s / %s / rep%d  log=%.3f  raw=%.4f (m/s²)²s\n',...
+    strrep(Tv.subject{end},'subject_',''), Tv.phase{end}, Tv.acquisition{end}, ...
+    Tv.repetition(end), log(Tv.tssv(end)), Tv.tssv(end));
+fprintf('Ratio max/min: %.1f×\n', Tv.tssv(end)/Tv.tssv(1));
+fprintf('Log difference: %.2f\n\n', log(Tv.tssv(end)) - log(Tv.tssv(1)));
+
+fprintf('=== TSSF range (non-excluded subjects only, after cleaning) ===\n');
+Tf = T(isfinite(T.tssf)&T.tssf>0&~ismember(T.subject,excl_tssf),:);
+Tf = sortrows(Tf, 'tssf', 'ascend');
+fprintf('n valid rows: %d\n', height(Tf));
+fprintf('MIN: %s / %s / %s / rep%d  log=%.3f  raw=%.2f N²\n',...
+    strrep(Tf.subject{1},'subject_',''), Tf.phase{1}, Tf.acquisition{1}, ...
+    Tf.repetition(1), log(Tf.tssf(1)), Tf.tssf(1));
+fprintf('MAX: %s / %s / %s / rep%d  log=%.3f  raw=%.2f N²\n',...
+    strrep(Tf.subject{end},'subject_',''), Tf.phase{end}, Tf.acquisition{end}, ...
+    Tf.repetition(end), log(Tf.tssf(end)), Tf.tssf(end));
+fprintf('Ratio max/min: %.1f×\n', Tf.tssf(end)/Tf.tssf(1));
+fprintf('Log difference: %.2f\n\n', log(Tf.tssf(end)) - log(Tf.tssf(1)));
+
+% Plot distributions side by side
+fig = figure('Position',[50 50 1400 500]);
+tl = tiledlayout(1,2,'TileSpacing','compact');
+
+nexttile; hold on;
+histogram(log(Tv.tssv(~Tv.haptic)), 40, 'FaceColor',[64 96 179]/255, ...
+    'EdgeColor','none','FaceAlpha',0.6,'Normalization','probability','DisplayName','NHF');
+histogram(log(Tv.tssv( Tv.haptic)), 40, 'FaceColor',[139 82 168]/255, ...
+    'EdgeColor','none','FaceAlpha',0.6,'Normalization','probability','DisplayName','HF');
+xlabel('log(TSSV) [(m/s²)²·s]'); ylabel('Proportion');
+title(sprintf('TSSV distribution (non-excluded subjects)\nRange: %.2f log-units = %.0f× ratio',...
+    log(Tv.tssv(end))-log(Tv.tssv(1)), Tv.tssv(end)/Tv.tssv(1)));
+legend('FontSize',9); grid on;
+
+nexttile; hold on;
+histogram(log(Tf.tssf(~Tf.haptic)), 40, 'FaceColor',[64 96 179]/255, ...
+    'EdgeColor','none','FaceAlpha',0.6,'Normalization','probability','DisplayName','NHF');
+histogram(log(Tf.tssf( Tf.haptic)), 40, 'FaceColor',[139 82 168]/255, ...
+    'EdgeColor','none','FaceAlpha',0.6,'Normalization','probability','DisplayName','HF');
+xlabel('log(TSSF) [N²]'); ylabel('Proportion');
+title(sprintf('TSSF distribution (non-excluded subjects)\nRange: %.2f log-units = %.0f× ratio',...
+    log(Tf.tssf(end))-log(Tf.tssf(1)), Tf.tssf(end)/Tf.tssf(1)));
+legend('FontSize',9); grid on;
+
+sgtitle('TSSV and TSSF value ranges after cleaning (whole-subject exclusions removed)', ...
+    'FontWeight','bold','FontSize',11);
+exportgraphics(fig, fullfile(cfg.output_root,'figures','tssf_tssv_range_clean.png'), 'Resolution',150);
+fprintf('Saved tssf_tssv_range_clean.png\n');
 function out=local_ternary(c,a,b), if c,out=a; else,out=b; end, end

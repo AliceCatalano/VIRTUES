@@ -74,10 +74,10 @@ end
 %%    combinations exist vs. how many are actually present)
 fprintf('\n--- 2. Feature-table coverage ---\n');
 tables_to_check = {
-    'eda_features.mat',            'EDA (GSR)'
-    'eye_features.mat',            'Eye-tracking'
+    'eda_features_v2.mat',            'EDA (GSR)'
+    'eye_features_v2.mat',            'Eye-tracking'
     'perf_features.mat',           'Performance'
-    'force_vibration_features.mat','Force/vibration'
+    'force_vibration_features_clean.mat','Force/vibration'
     };
 for i = 1:size(tables_to_check, 1)
     path = fullfile(cfg.output_root, tables_to_check{i,1});

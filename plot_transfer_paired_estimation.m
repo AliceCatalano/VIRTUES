@@ -39,7 +39,7 @@ function plot_transfer_paired_estimation(cfg)
     if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
     sources = local_load_if_exists(cfg.output_root, { ...
-        'eda_features.mat', 'eye_features.mat', 'perf_features.mat', 'force_vibration_features.mat'});
+        'eda_features_v2.mat', 'eye_features_v2.mat', 'perf_features.mat', 'force_vibration_features_clean.mat'});
 
     outcome_list = {
         'scl_mean',      sources.eda

@@ -122,7 +122,7 @@ for mi = 1:2
     end
 
     %% Figure: BL1 vs BL2 paired lines + delta comparison
-    fig=figure('Position',[50 50 1100 420]);
+    fig=figure('Position',[2000 2000 1100 420]);
     tl=tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
     title(tl,sprintf('%s — Baseline1 vs Baseline2: within-group change and delta comparison',upper(oc)),...
         'FontWeight','bold','FontSize',11);

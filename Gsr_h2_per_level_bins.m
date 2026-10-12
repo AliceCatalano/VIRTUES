@@ -79,7 +79,7 @@ end
 fprintf('\n=== TRAINING: H2 per level ===\n');
 levels = 1:5;
 
-fig_tr = figure('Position',[50 50 1800 900]);
+fig_tr = figure('Position',[2000 2000 1800 900]);
 tl_tr  = tiledlayout(4,5,'TileSpacing','compact','Padding','compact');
 title(tl_tr,'H2 — Training: log(phasic SCR amplitude) variance by peak\_accel\_g bin — per level (group-specific quartiles)', ...
     'FontWeight','bold','FontSize',10);
@@ -147,7 +147,7 @@ exportgraphics(fig_tr,fullfile(fig_dir,'h2_scr_training_per_level.png'),'Resolut
 %% Baseline: same level compared across BL1 and BL2
 fprintf('\n=== BASELINE: H2 per level, BL1 vs BL2 ===\n');
 
-fig_bl = figure('Position',[50 50 1800 700]);
+fig_bl = figure('Position',[2000 2000 1800 700]);
 tl_bl  = tiledlayout(2,5,'TileSpacing','compact','Padding','compact');
 title(tl_bl,'H2 — Baseline: log(phasic SCR amplitude) by peak\_accel\_g bin — same level, BL1 vs BL2 (group-specific quartiles per phase)', ...
     'FontWeight','bold','FontSize',10);
@@ -215,7 +215,7 @@ exportgraphics(fig_bl,fullfile(fig_dir,'h2_scr_baseline_per_level.png'),'Resolut
 %% Test phases: H2 per phase (Test1 and Test2 are single acquisitions, no level structure)
 fprintf('\n=== TEST PHASES: H2 ===\n');
 
-fig_te = figure('Position',[50 50 1000 500]);
+fig_te = figure('Position',[2000 2000 1000 500]);
 tl_te  = tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
 title(tl_te,'H2 — Test phases: log(phasic SCR) SD ratio by peak\_accel\_g bin (group-specific quartiles)', ...
     'FontWeight','bold','FontSize',10);

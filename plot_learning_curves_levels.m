@@ -48,8 +48,8 @@ function plot_learning_curves_levels(cfg)
     fig_dir = fullfile(cfg.output_root, 'figures');
     if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
-    eda_file  = fullfile(cfg.output_root, 'eda_features.mat');
-    eye_file  = fullfile(cfg.output_root, 'eye_features.mat');
+    eda_file  = fullfile(cfg.output_root, 'eda_features_v2.mat');
+    eye_file  = fullfile(cfg.output_root, 'eye_features_v2.mat');
     perf_file = fullfile(cfg.output_root, 'perf_features.mat');
     if ~isfile(eda_file) || ~isfile(eye_file) || ~isfile(perf_file)
         error('plot_learning_curves: run gsr_extract_features(cfg), eye_extract_features(cfg), and perf_extract_features(cfg) first.');

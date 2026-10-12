@@ -17,7 +17,7 @@
 clear; clc;
 cfg = config();
 
-fv_file = fullfile(cfg.output_root, 'force_vibration_features.mat');
+fv_file = fullfile(cfg.output_root, 'force_vibration_features_clean.mat');
 if ~isfile(fv_file)
     error('run_force_vibration_transfer_lmms: run perf_extract_force_vibration_features(cfg) first.');
 end
@@ -25,16 +25,16 @@ loaded = load(fv_file, 'T');
 T = loaded.T;
 
 n_nonpositive = struct();
-for oc = {'tssf_raw','tssv'}
+for oc = {'tssf','tssv'}
     outcome = oc{1};
     mask_nonpos = T.(outcome) <= 0;
     n_nonpositive.(outcome) = sum(mask_nonpos & isfinite(T.(outcome)));
     T.(outcome)(mask_nonpos) = NaN;   % cannot log-transform; excluded, not fabricated
     T.(outcome) = log(T.(outcome));
 end
-fprintf('Excluded (non-positive, pre-log) rows: tssf_raw=%d, tssv=%d\n', n_nonpositive.tssf_raw, n_nonpositive.tssv);
+fprintf('Excluded (non-positive, pre-log) rows: tssf=%d, tssv=%d\n', n_nonpositive.tssf, n_nonpositive.tssv);
 
-outcomes = {'tssf_raw', 'tssv'};
+outcomes = {'tssf', 'tssv'};
 
 families = struct( ...
     'name',       {'baseline_transfer_elastic', 'test_transfer_pegtransfer'}, ...

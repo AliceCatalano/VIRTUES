@@ -80,7 +80,7 @@ for mi = 1:2
     T_h1b.p_fdr=p_fdr_b(:); all_results.(oc).T_H1_phases=T_h1b;
 
     %% === H1 Figures — log scale summary ===
-    fig_h1sum=figure('Position',[50 50 900 420]);
+    fig_h1sum=figure('Position',[2000 2000 900 420]);
     tl=tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
     title(tl,sprintf('H1: log-%s by phase — NHF vs HF (subject means ± 95%% CI)',upper(oc)), ...
         'FontWeight','bold','FontSize',11);
@@ -116,7 +116,7 @@ for mi = 1:2
     %% === H1 Unfolded — rep-by-rep within each level (RAW scale) ===
     T_raw = FV(strcmp(FV.phase_type,'training')&isfinite(FV.(oc))&FV.(oc)>0,:);
 
-    fig_rep=figure('Position',[50 50 1600 500]);
+    fig_rep=figure('Position',[2000 2000 1600 500]);
     tl_rep=tiledlayout(1,5,'TileSpacing','compact','Padding','compact');
     title(tl_rep,sprintf('%s — Rep-by-rep within each training level (raw, group mean ± SE + individual lines)',upper(oc)), ...
         'FontWeight','bold','FontSize',11);
@@ -185,7 +185,7 @@ for mi = 1:2
     mu_N50=mean(grand_N,'omitnan'); se_N50=std(grand_N,'omitnan')./sqrt(sum(isfinite(grand_N)));
     mu_H50=mean(grand_H,'omitnan'); se_H50=std(grand_H,'omitnan')./sqrt(sum(isfinite(grand_H)));
 
-    fig_seq=figure('Position',[50 50 1400 450]); hold on;
+    fig_seq=figure('Position',[2000 2000 1400 450]); hold on;
     for si=1:numel(all_subj)
         if is_H_g(si), col=CH; dat=grand_H(si,:);
         else,          col=CN; dat=grand_N(si,:); end
@@ -207,7 +207,7 @@ for mi = 1:2
     exportgraphics(fig_seq,fullfile(fig_dir,sprintf('%s_full_sequence.png',oc)),'Resolution',180);
 
     %% === H1 Unfolded — Baseline levels (BL1 and BL2) ===
-    fig_bl=figure('Position',[50 50 1000 450]);
+    fig_bl=figure('Position',[2000 2000 1000 450]);
     tl_bl=tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
     title(tl_bl,sprintf('%s — Baseline: 5 difficulty levels (raw, individual dots + group mean ± SE)',upper(oc)), ...
         'FontWeight','bold','FontSize',11);
@@ -237,14 +237,14 @@ for mi = 1:2
         end
         set(gca,'XTick',1:5,'XTickLabel',{'L1','L2','L3','L4','L5'},'FontSize',9);
         xlabel('Baseline level (difficulty)'); ylabel(ylabels_raw{mi},'FontSize',9);
-        title(sprintf('%s — note: levels reflect task difficulty, not training order',bl_phase),'FontSize',9);
+        title(sprintf('%s', bl_phase),'FontSize',9);
         if bi==1, legend('Location','best','FontSize',9); end
         grid on; box on;
     end
     exportgraphics(fig_bl,fullfile(fig_dir,sprintf('%s_baseline_levels.png',oc)),'Resolution',180);
 
     %% === H1 Unfolded — Test phases ===
-    fig_test=figure('Position',[50 50 700 420]);
+    fig_test=figure('Position',[2000 2000 700 420]);
     tl_test=tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
     title(tl_test,sprintf('%s — Test phases: NHF vs HF (raw, individual dots + mean ± SE)',upper(oc)), ...
         'FontWeight','bold','FontSize',11);
@@ -306,7 +306,7 @@ for mi = 1:2
     disp(T_h2(:,{'bin','n_N','n_H','mean_N','mean_H','sd_N','sd_H','ratio_sd','p_levene_fdr','p_mean_fdr','cohens_d'}));
     all_results.(oc).T_H2=T_h2;
 
-    fig_h2=figure('Position',[50 50 1100 480]);
+    fig_h2=figure('Position',[2000 2000 1100 480]);
     tl_h2=tiledlayout(1,n_bins+1,'TileSpacing','compact','Padding','compact');
     title(tl_h2,sprintf('H2: log-%s variance by intensity bin (group-specific quartiles)',imp_oc),'FontWeight','bold','FontSize',11);
     for b=1:n_bins
@@ -391,7 +391,7 @@ for mi = 1:2
     T_h3b=cell2table(rows_h3b,'VariableNames',{'phase_pre','phase_post','n_N','n_H','delta_N','delta_H','p_N_paired','p_H_paired','p_diff'});
     all_results.(oc).T_H3a=T_h3a; all_results.(oc).T_H3b=T_h3b;
 
-    fig_h3=figure('Position',[50 50 900 420]);
+    fig_h3=figure('Position',[2000 2000 900 420]);
     tl_h3=tiledlayout(1,4,'TileSpacing','compact','Padding','compact');
     title(tl_h3,sprintf('H3: log-%s post-training snapshot + pre to post change',imp_oc),'FontWeight','bold','FontSize',11);
     for pp=1:2

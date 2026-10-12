@@ -48,7 +48,7 @@ for mi = 1:2
     fprintf('NHF vs HF: p=%.4f\n',p_rNH);
     results.(sprintf('C%d',mi))=struct('lme',lme,'rho_N',rN,'rho_H',rH,'p_rN0',p_rN0,'p_rH0',p_rH0,'p_rNH',p_rNH);
 
-    fig=figure('Position',[50 50 1100 440]);
+    fig=figure('Position',[2000 2000 1100 440]);
     tl=tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
     title(tl,sprintf('C%d: %s vs tonic SCL (within-subject z-scored)',mi,lbl),'FontWeight','bold','FontSize',11);
     nexttile; hold on;
@@ -196,7 +196,7 @@ function [T_out,J] = local_variance_bins(J, pred_col, resp_col, hap_col, bin_col
 end
 
 function local_plot_bins(J, bin_col, hap_col, resp_col, T_bins, ylabel_str, title_str, xlabel_str, lme, CN, CH, fig_dir, fname)
-    fig=figure('Position',[50 50 1300 480]);
+    fig=figure('Position',[2000 2000 1300 480]);
     tl=tiledlayout(1,5,'TileSpacing','compact','Padding','compact');
     title(tl,title_str,'FontWeight','bold','FontSize',11,'Interpreter','none');
     for b=1:4

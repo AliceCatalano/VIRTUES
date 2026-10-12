@@ -51,7 +51,7 @@ out=mask&(log_v>p99); T.tssv(out)=NaN; n_removed_p99=n_removed_p99+sum(out);
 fprintf('Total removed by p99: %d\n',n_removed_p99);
 
 % TSSF whole-subject exclusions
-tssf_subj_excl={'subject_s02N','subject_s03H','subject_s04H'};
+tssf_subj_excl={'subject_s02N','subject_s05N','subject_s03H','subject_s04H'};
 for si=1:numel(tssf_subj_excl)
     s=tssf_subj_excl{si}; n=sum(strcmp(T.subject,s)&isfinite(T.tssf)&T.tssf>0);
     T.tssf(strcmp(T.subject,s))=NaN;

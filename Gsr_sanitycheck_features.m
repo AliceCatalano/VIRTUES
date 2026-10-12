@@ -3,7 +3,7 @@
 clear; clc;
 cfg = config();
 
-feat_file = fullfile(cfg.output_root, 'eda_features.mat');
+feat_file = fullfile(cfg.output_root, 'eda_features_v2.mat');
 if ~isfile(feat_file)
     error('sanity_check_features: %s not found -- run gsr_extract_features(config()) first', feat_file);
 end

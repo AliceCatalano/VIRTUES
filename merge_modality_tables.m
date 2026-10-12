@@ -20,8 +20,8 @@ function T = merge_modality_tables(cfg)
 % checking the two agree (a mismatch would indicate the two extraction
 % scripts have drifted out of sync with each other).
 
-    eda_file  = fullfile(cfg.output_root, 'eda_features.mat');
-    eye_file  = fullfile(cfg.output_root, 'eye_features.mat');
+    eda_file  = fullfile(cfg.output_root, 'eda_features_v2.mat');
+    eye_file  = fullfile(cfg.output_root, 'eye_features_v2.mat');
     perf_file = fullfile(cfg.output_root, 'perf_features.mat');
     for f = {eda_file, eye_file, perf_file}
         if ~isfile(f{1})

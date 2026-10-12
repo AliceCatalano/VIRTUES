@@ -18,7 +18,7 @@
 clear; clc;
 cfg = config();
 
-feat_file = fullfile(cfg.output_root, 'eda_features.mat');
+feat_file = fullfile(cfg.output_root, 'eda_features_v2.mat');
 if ~isfile(feat_file)
     error('run_covariate_sensitivity_check: %s not found -- run gsr_extract_features(cfg) first.', feat_file);
 end

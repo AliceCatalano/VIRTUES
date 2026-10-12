@@ -175,7 +175,7 @@ disp(lme_c4.Coefficients(:,{'Name','Estimate','SE','tStat','pValue'}));
 disp(anova(lme_c4));
 
 %% Step 6: Unified H2 figure
-fig=figure('Position',[50 50 1400 900]);
+fig=figure('Position',[2000 2000 1400 900]);
 tl=tiledlayout(size(outcomes_h2,1),5,'TileSpacing','compact','Padding','compact');
 title(tl,'H2: All outcomes by canonical impact\_tssv intensity bins (group-specific quartiles)', ...
     'FontWeight','bold','FontSize',11);

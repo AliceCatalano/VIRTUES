@@ -23,7 +23,7 @@
 clear; clc;
 cfg = config();
 
-feat_file = fullfile(cfg.output_root, 'eye_features.mat');
+feat_file = fullfile(cfg.output_root, 'eye_features_v2.mat');
 if ~isfile(feat_file)
     fprintf('No cached feature table found -- running eye_extract_features (this walks all subjects/acquisitions and may take a while)...\n');
     T = eye_extract_features(cfg);
@@ -34,7 +34,7 @@ else
     T = loaded.T;
 end
 
-outcomes = {'pupil_slope', 'gaze_dispersion', 'saccade_rate', 'collision_pupil_response_mean'};
+outcomes = {'pupil_mean_norm', 'gaze_entropy', 'saccade_rate', 'fixation_rate','fixation_mean_dur', 'collision_pupil_response_mean'};
 
 results = cell(numel(outcomes), 1);
 for i = 1:numel(outcomes)

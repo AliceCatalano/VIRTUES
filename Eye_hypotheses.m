@@ -13,7 +13,7 @@ pupil_outcomes={'pupil_mean_norm','Normalised pupil diameter ((pupil-baseline)/b
 
 all_results=struct();
 
-% ════════════════════════════════════════════════════════════════
+%% ════════════════════════════════════════════════════════════════
 % H1: learning curve within training — efficiency changes rep 1→10
 % and pre→post training (Baseline1 vs Baseline2), per group
 % ════════════════════════════════════════════════════════════════
@@ -57,13 +57,38 @@ for oi=1:size(efficiency_outcomes,1)
         fprintf('  %s %s BL1 vs BL2: t=%.3f p=%.4f d=%.3f\n',oc,glabel,st.tstat,p_pair,d);
         h1_rows(end+1,:)={oc,glabel,'Baseline1_vs_Baseline2',numel(pre),mean(pre,'omitnan'),mean(post,'omitnan'),st.tstat,p_pair,d}; %#ok<AGROW>
     end
+    % Pre vs post: Baseline1 vs Baseline2 per group
+    for grp=[false true]
+        glabel=local_ternary(grp,'HF','NHF');
+        Tp1=T(strcmp(T.phase,'Test1')&isfinite(T.(oc))&T.haptic==grp,:);
+        Tp2=T(strcmp(T.phase,'Test2')&isfinite(T.(oc))&T.haptic==grp,:);
+        sl=intersect(unique(Tp1.subject),unique(Tp2.subject));
+        pre = nan(numel(sl),1); post=nan(numel(sl),1);
+        
+        for si=1:numel(sl)
+            s=sl{si}; 
+            pre(si)=mean(Tp1.(oc)(strcmp(Tp1.subject,s)),'omitnan'); 
+            post(si)=mean(Tp2.(oc)(strcmp(Tp2.subject,s)),'omitnan'); 
+        end 
+
+        keep = isfinite(pre) & isfinite(post); 
+        pre=pre(keep); post=post(keep);
+        
+        if numel(pre)<2, continue; end
+        
+        [~,p_pair,~,st]=ttest(post,pre);
+        
+        d= (mean(post,'omitnan')-mean(pre,'omitnan'))/std(post-pre,'omitnan');
+        fprintf('  %s %s Test1 vs Test2: t=%.3f p=%.4f d=%.3f\n',oc,glabel,st.tstat,p_pair,d);
+        h1_rows(end+1,:)={oc,glabel,'Test1_vs_Test2',numel(pre),mean(pre,'omitnan'),mean(post,'omitnan'),st.tstat,p_pair,d}; %#ok<AGROW>
+    end
 end
 T_h1=cell2table(h1_rows,'VariableNames',{'outcome','group','comparison','n','mean_early_pre','mean_late_post','t','p','cohens_d'});
 T_h1.p_fdr=local_fdr(T_h1.p); all_results.H1=T_h1;
 disp(T_h1);
 
 % Learning curve figure
-fig=figure('Position',[50 50 1400 900]);
+fig=figure('Position',[2000 2000 1400 900]);
 sgtitle('H1 — Gaze efficiency learning curve across training repetitions','FontWeight','bold');
 for oi=1:size(efficiency_outcomes,1)
     oc=efficiency_outcomes{oi,1}; yl=efficiency_outcomes{oi,2};
@@ -80,14 +105,14 @@ for oi=1:size(efficiency_outcomes,1)
     end
     set(gca,'XTick',1:10); xlabel('Repetition (pooled across levels)'); ylabel(yl,'FontSize',8); legend('Location','best','FontSize',8); grid on;
 end
-exportgraphics(fig,fullfile(fig_dir,'eye_H1_learning_curve.png'),'Resolution',150); close(fig);
+exportgraphics(fig,fullfile(fig_dir,'eye_H1_learning_curve.png'),'Resolution',150); 
 
-% ════════════════════════════════════════════════════════════════
+%% ════════════════════════════════════════════════════════════════
 % H2: HF shows higher gaze efficiency across all phases
 % ════════════════════════════════════════════════════════════════
 fprintf('\n=== H2: HF vs NHF gaze efficiency across all phases ===\n');
-phases_ord={'Baseline1','Training_L1','Training_L2','Training_L3','Training_L4','Training_L5','Baseline2','Test1','Test2'};
-xlabels={'BL1','Tr-L1','Tr-L2','Tr-L3','Tr-L4','Tr-L5','BL2','T1','T2'};
+phases_ord={'Baseline1','Test1','Training_L1','Training_L2','Training_L3','Training_L4','Training_L5','Baseline2','Test2'};
+xlabels={'BL1','T1','Tr-L1','Tr-L2','Tr-L3','Tr-L4','Tr-L5','BL2','T2'};
 h2_rows={};
 for oi=1:size(efficiency_outcomes,1)
     oc=efficiency_outcomes{oi,1}; yl=efficiency_outcomes{oi,2};
@@ -111,7 +136,7 @@ for oi=1:size(efficiency_outcomes,1)
     T_h2_tmp=cell2table(h2_rows(strcmp(cellfun(@(r)r,h2_rows(:,1),'UniformOutput',false),oc),:),'VariableNames',{'outcome','phase','n_N','n_H','mean_N','mean_H','t','p','cohens_d'});
     if height(T_h2_tmp)>0, pfdr_v_tmp=local_fdr(T_h2_tmp.p); else, pfdr_v_tmp=[]; end
 
-    fig=figure('Position',[50 50 1100 380]);
+    fig=figure('Position',[2000 2000 1100 380]);
     hold on;
     fill([1:9 9:-1:1],[mu_N+1.96*se_N fliplr(mu_N-1.96*se_N)],CN,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
     fill([1:9 9:-1:1],[mu_H+1.96*se_H fliplr(mu_H-1.96*se_H)],CH,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
@@ -125,7 +150,7 @@ for oi=1:size(efficiency_outcomes,1)
     end
     set(gca,'XTick',1:9,'XTickLabel',xlabels,'FontSize',9); ylabel(yl,'FontSize',9); xlabel('Phase'); legend('Location','best','FontSize',9); grid on; box on;
     title(sprintf('H2 — %s: NHF vs HF across all phases',strrep(oc,'_',' ')),'FontSize',10);
-    exportgraphics(fig,fullfile(fig_dir,sprintf('eye_H2_%s.png',oc)),'Resolution',150); close(fig);
+    exportgraphics(fig,fullfile(fig_dir,sprintf('eye_H2_%s.png',oc)),'Resolution',150);
 end
 T_h2=cell2table(h2_rows,'VariableNames',{'outcome','phase','n_N','n_H','mean_N','mean_H','t','p','cohens_d'});
 T_h2.p_fdr=local_fdr(T_h2.p); all_results.H2=T_h2; disp(T_h2);
@@ -137,10 +162,10 @@ T_h2.p_fdr=local_fdr(T_h2.p); all_results.H2=T_h2; disp(T_h2);
 fprintf('\n=== H3: Pupil collision response variance by intensity bin ===\n');
 TC_tr=TC(strcmp(TC.phase_type,'training')&isfinite(TC.peak_accel_g)&isfinite(TC.pupil_response_norm),:);
 fprintf('Training collisions (pupil+intensity valid): N=%d  H=%d\n',sum(~TC_tr.haptic),sum(TC_tr.haptic));
-eN=unique(quantile(TC_tr.peak_accel_g(~TC_tr.haptic),[0 0.25 0.50 0.75 1.0]));
-eH=unique(quantile(TC_tr.peak_accel_g( TC_tr.haptic),[0 0.25 0.50 0.75 1.0]));
-[~,~,bvN]=histcounts(TC_tr.peak_accel_g(~TC_tr.haptic),eN);
-[~,~,bvH]=histcounts(TC_tr.peak_accel_g( TC_tr.haptic),eH);
+eN=unique(quantile(TC_tr.peak_accel_g_nidaq(~TC_tr.haptic),[0 0.25 0.50 0.75 1.0]));
+eH=unique(quantile(TC_tr.peak_accel_g_nidaq( TC_tr.haptic),[0 0.25 0.50 0.75 1.0]));
+[~,~,bvN]=histcounts(TC_tr.peak_accel_g_nidaq(~TC_tr.haptic),eN);
+[~,~,bvH]=histcounts(TC_tr.peak_accel_g_nidaq( TC_tr.haptic),eH);
 TC_tr.bv=zeros(height(TC_tr),1); TC_tr.bv(~TC_tr.haptic)=bvN; TC_tr.bv(TC_tr.haptic)=bvH;
 h3_rows={};
 for b=1:4
@@ -156,7 +181,7 @@ T_h3=cell2table(h3_rows,'VariableNames',{'bin','n_N','n_H','mean_N','mean_H','sd
 T_h3.p_levene_fdr=local_fdr(T_h3.p_levene); T_h3.p_mean_fdr=local_fdr(T_h3.p_mean_ttest);
 all_results.H3=T_h3; disp(T_h3);
 
-fig=figure('Position',[50 50 1200 480]);
+fig=figure('Position',[2000 2000 1200 480]);
 sgtitle('H3 — Pupil collision response variance by intensity quartile (group-specific bins)','FontWeight','bold');
 for b=1:4
     xN=TC_tr.pupil_response_norm(~TC_tr.haptic&TC_tr.bv==b); xN=xN(isfinite(xN));
@@ -176,8 +201,7 @@ subplot(1,5,5); hold on;
 bh=bar(1:4,T_h3.ratio_sdN_sdH,0.55); bh.FaceColor='flat';
 for b=1:4, bh.CData(b,:)=local_ternary(T_h3.p_levene_fdr(b)<0.05,[0.3 0.5 0.3],[0.7 0.7 0.7]); end
 yline(1,'r--','LineWidth',1.8); ylabel('SD_{NHF}/SD_{HF}'); xlabel('Intensity bin'); title('Variance ratio','FontSize',9); set(gca,'XTick',1:4); ylim([0 1.4]); grid on;
-exportgraphics(fig,fullfile(fig_dir,'eye_H3_pupil_variance.png'),'Resolution',150); close(fig);
-
+exportgraphics(fig,fullfile(fig_dir,'eye_H3_pupil_variance.png'),'Resolution',150); 
 % ════════════════════════════════════════════════════════════════
 % H4: pupil collision response NHF vs HF across phases
 % (mirror of EDA H1 for pupil)
@@ -206,7 +230,7 @@ end
 T_h4=cell2table(h4_rows,'VariableNames',{'phase','n_N','n_H','mean_N','mean_H','t','p','cohens_d'});
 T_h4.p_fdr=local_fdr(T_h4.p); all_results.H4=T_h4; disp(T_h4);
 
-fig=figure('Position',[50 50 1100 400]);
+fig=figure('Position',[2000 2000 1100 400]);
 hold on;
 fill([1:9 9:-1:1],[mu_N4+1.96*se_N4 fliplr(mu_N4-1.96*se_N4)],CN,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
 fill([1:9 9:-1:1],[mu_H4+1.96*se_H4 fliplr(mu_H4-1.96*se_H4)],CH,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
@@ -221,13 +245,9 @@ for k=1:min(9,numel(fdr_vec))
 end
 set(gca,'XTick',1:9,'XTickLabel',xlabels,'FontSize',9); ylabel(yl,'FontSize',9); xlabel('Phase'); legend('Location','best','FontSize',9); grid on; box on;
 title('H4 — Collision-locked pupil dilation: NHF vs HF across all phases','FontSize',10);
-exportgraphics(fig,fullfile(fig_dir,'eye_H4_pupil_collision.png'),'Resolution',150); close(fig);
+exportgraphics(fig,fullfile(fig_dir,'eye_H4_pupil_collision.png'),'Resolution',150); 
 
 save(fullfile(cfg.output_root,'eye_hypothesis_results.mat'),'all_results');
-writetable(T_h1,fullfile(cfg.output_root,'eye_H1_results.csv'));
-writetable(T_h2,fullfile(cfg.output_root,'eye_H2_results.csv'));
-writetable(T_h3,fullfile(cfg.output_root,'eye_H3_results.csv'));
-writetable(T_h4,fullfile(cfg.output_root,'eye_H4_results.csv'));
 fprintf('Saved eye_hypothesis_results\n');
 
 % ── LOCAL FUNCTIONS ────────────────────────────────────────────

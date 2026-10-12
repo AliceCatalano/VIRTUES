@@ -24,10 +24,10 @@
 clear; clc;
 cfg = config();
 
-feat_file = fullfile(cfg.output_root, 'eda_features.mat');
+feat_file = fullfile(cfg.output_root, 'eda_features_v2.mat');
 if ~isfile(feat_file)
     fprintf('No cached feature table found -- running gsr_extract_features (this walks all subjects/acquisitions and may take a while)...\n');
-    T = gsr_extract_features(cfg);
+    T = gsr_extract_features_v2(cfg);
 else
     fprintf('Loading cached feature table from %s\n', feat_file);
     fprintf('(delete this file and rerun if gsr_extract_features.m or upstream preprocessing has changed)\n');

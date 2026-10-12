@@ -41,7 +41,7 @@ function results = gsr_transfer_lmm(T, outcome, phase_type, phase_pre, phase_pos
     Tph.haptic_num  = double(Tph.haptic);
     Tph.phase_post  = double(strcmp(Tph.phase, phase_post_label));   % 0=pre, 1=post
 
-    has_level = any(isfinite(Tph.level));
+    has_level = numel(unique(Tph.level(isfinite(Tph.level)))) > 1;
     if has_level
         formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);
         formula = sprintf('%s ~ phase_post*haptic_num + level_cat + (1 | subject_cat)', outcome);

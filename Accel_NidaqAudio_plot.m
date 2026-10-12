@@ -5,10 +5,10 @@
 %
 % Run with a clean workspace (clear all) to avoid stale-variable time axis bugs.
 
-clear; clc;
+clear; clc;close all;
 
 output_root    = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
-mat_folder     = fullfile(output_root, 'subject_s27N', 'level_L5/rep_10'); %, 'Level1'
+mat_folder     = fullfile(output_root, 'subject_s20N', 'level_L2/rep_05'); %, 'Level1'
 
 bp_lo = 80; bp_hi = 1000;
 
@@ -134,7 +134,7 @@ end
 % ── Force channels ───────────────────────────────────────────────────────
 if has_force
     f_colors = lines(numel(force_cols));
-    figure('Name','Force Channels','Position',[100 50 1400 900]);
+    figure('Name','Force Channels','Position',[2000 2000 1400 900]);
     ax_force = gobjects(numel(force_cols),1);
     for k = 1:numel(force_cols)
         ax_force(k) = subplot(numel(force_cols),1,k);
@@ -191,7 +191,7 @@ function plot_bp_6panel(t, x, y, z, event_times, Fs, bp_lo, bp_hi, label)
     sumbp = xbp + ybp + zbp;
     [SPEC_f, freq] = positiveFFT(sumbp, Fs);
 
-    figure('Name',['Bandpass 6-panel: ' label],'Position',[50 50 1400 1100]);
+    figure('Name',['Bandpass 6-panel: ' label],'Position',[2000 2000 1400 1100]);
     sgtitle(sprintf('Bandpass [%d–%d Hz] | %s', bp_lo, bp_hi, label),'FontWeight','bold','FontSize',10);
 
     ax1 = subplot(5,1,1); plot(t,xbp,'Color',[0.8 0.1 0.1],'LineWidth',0.6); hold on; add_event_markers(gca,event_times);
@@ -210,7 +210,7 @@ end
 
 function plot_raw6(t, tbl, chan_names, side_labels, axis_labels, event_times, ttl)
     ch_colors = {[0.8 0.1 0.1],[0.1 0.6 0.1],[0.1 0.2 0.8],[1.0 0.5 0.0],[0.0 0.7 0.7],[0.6 0.0 0.8]};
-    figure('Name',ttl,'Position',[50 50 1400 900]);
+    figure('Name',ttl,'Position',[2000 2000 1400 900]);
     ax = gobjects(6,1);
     for k = 1:6
         ax(k) = subplot(6,1,k);

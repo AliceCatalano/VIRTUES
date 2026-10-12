@@ -38,8 +38,6 @@ end
 save(fullfile(cfg.output_root,'h1_results.mat'),'all_results');
 fn=fieldnames(all_results); combined=table();
 for k=1:numel(fn), combined=[combined;all_results.(fn{k}).table]; end %#ok<AGROW>
-writetable(combined,fullfile(cfg.output_root,'h1_results.csv'));
-fprintf('Saved h1_results.mat and h1_results.csv\n');
 
 function row=local_cmp(outcome,ph,xN,xH)
     n1=numel(xN); n2=numel(xH);
@@ -64,7 +62,7 @@ function r=local_lmm(Ttr,outcome)
 end
 function local_plot(T,outcome,ylab,is_h,sbyl,T_res,CN,CH,fig_dir)
     ph_list={'Baseline1','Baseline2','Test1','Test2'};
-    fig=figure('Name',sprintf('H1:%s',outcome),'Position',[50 50 1600 500]);
+    fig=figure('Name',sprintf('H1:%s',outcome),'Position',[2000 2000 1600 500]);
     sgtitle(sprintf('H1 — %s',strrep(outcome,'_',' ')),'FontWeight','bold');
     for lv=1:5
         subplot(1,9,lv); hold on;

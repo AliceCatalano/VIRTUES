@@ -28,8 +28,8 @@
 clear; clc;
 cfg = config();
 
-eda_file  = fullfile(cfg.output_root, 'eda_features.mat');
-eye_file  = fullfile(cfg.output_root, 'eye_features.mat');
+eda_file  = fullfile(cfg.output_root, 'eda_features_v2.mat');
+eye_file  = fullfile(cfg.output_root, 'eye_features_v2.mat');
 perf_file = fullfile(cfg.output_root, 'perf_features.mat');
 if ~isfile(eda_file) || ~isfile(eye_file) || ~isfile(perf_file)
     error('run_training_lmms_3way: run gsr_extract_features(cfg), eye_extract_features(cfg), and perf_extract_features(cfg) first.');
@@ -40,11 +40,11 @@ Tperf = load(perf_file, 'T'); Tperf = Tperf.T;
 
 % {outcome, table, family, modality label}
 jobs = {
-    'scl_mean',                Teda,  'gaussian', 'GSR'
+    'scl_mean_bc',                Teda,  'gaussian', 'GSR'
     'scr_freq',                 Teda,  'gaussian', 'GSR'
-    'scr_mean_amp',              Teda,  'gaussian', 'GSR'
-    'collision_scr_amp_mean',     Teda,  'gaussian', 'GSR'
-    'pupil_slope',               Teye,  'gaussian', 'Eye'
+    'scr_mean_amp_bc',              Teda,  'gaussian', 'GSR'
+    'collision_scr_amp_mean_bc',     Teda,  'gaussian', 'GSR'
+    'pupil_mean_norm',               Teye,  'gaussian', 'Eye'
     'gaze_dispersion',            Teye,  'gaussian', 'Eye'
     'saccade_rate',               Teye,  'gaussian', 'Eye'
     'collision_pupil_response_mean', Teye, 'gaussian', 'Eye'

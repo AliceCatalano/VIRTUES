@@ -11,8 +11,8 @@ h2   = load(fullfile(cfg.output_root,'h2_results_v2.mat'),'T_res','edges_N','edg
 h3s  = load(fullfile(cfg.output_root,'h3_results.mat'),'all_results'); h3s=h3s.all_results;
 
 %% ── FIGURE 1: H1 tonic SCL across phases ──────────────────────────────
-phases_ord = {'Baseline1','Training_L1','Training_L2','Training_L3','Training_L4','Training_L5','Baseline2','Test1','Test2'};
-xlabels    = {'BL1','Tr-L1','Tr-L2','Tr-L3','Tr-L4','Tr-L5','BL2','T1','T2'};
+phases_ord = {'Baseline1','Test1','Training_L1','Training_L2','Training_L3','Training_L4','Training_L5','Baseline2','Test2'};
+xlabels    = {'BL1','T1','Tr-L1','Tr-L2','Tr-L3','Tr-L4','Tr-L5','BL2','T2'};
 tbl = h1.scl_mean_bc.table;
 mu_N=nan(1,9); mu_H=nan(1,9); se_N=nan(1,9); se_H=nan(1,9); pfdr=nan(1,9); d=nan(1,9);
 for k=1:9
@@ -36,7 +36,7 @@ for k=1:9
     se_N(k)=std(xN,'omitnan')/sqrt(numel(xN)); se_H(k)=std(xH,'omitnan')/sqrt(numel(xH));
 end
 
-fig1=figure('Position',[50 50 1100 420]);
+fig1=figure('Position',[2000 2000 1100 420]);
 ax=axes(fig1); hold(ax,'on');
 x=1:9;
 fill(ax,[x fliplr(x)],[mu_N+1.96*se_N fliplr(mu_N-1.96*se_N)],CN,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
@@ -79,7 +79,7 @@ for k=1:9
     xN=xa(~ih&isfinite(xa)); xH=xa(ih&isfinite(xa));
     se_N2(k)=std(xN,'omitnan')/sqrt(numel(xN)); se_H2(k)=std(xH,'omitnan')/sqrt(numel(xH));
 end
-fig2=figure('Position',[50 50 1100 420]);
+fig2=figure('Position',[2000 2000 1100 420]);
 ax=axes(fig2); hold(ax,'on');
 fill(ax,[x fliplr(x)],[mu_N2+1.96*se_N2 fliplr(mu_N2-1.96*se_N2)],CN,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
 fill(ax,[x fliplr(x)],[mu_H2+1.96*se_H2 fliplr(mu_H2-1.96*se_H2)],CH,'FaceAlpha',0.15,'EdgeColor','none','HandleVisibility','off');
@@ -113,7 +113,7 @@ binsN=histcounts(TC_tr.peak_accel_g(~TC_tr.haptic),eN); %#ok
 TC_tr.bv=zeros(height(TC_tr),1);
 TC_tr.bv(~TC_tr.haptic)=bvN; TC_tr.bv(TC_tr.haptic)=bvH;
 
-fig3=figure('Position',[50 50 1200 520]);
+fig3=figure('Position',[2000 2000 1200 520]);
 sgtitle('H2 — EDA response variance by collision intensity quartile (group-specific bins)','FontWeight','bold','FontSize',11);
 for b=1:n_bins
     xN=TC_tr.scr_amp_local_bc(~TC_tr.haptic&TC_tr.bv==b); xN=xN(isfinite(xN));
@@ -149,7 +149,7 @@ title('Variance ratio','FontSize',9); set(gca,'XTick',1:4); ylim([0 1.2]); grid 
 exportgraphics(fig3,fullfile(fig_dir,'summary_H2_variance.png'),'Resolution',180); 
 
 % ── FIGURE 4: H2 mean EDA by bin (H > N) ──────────────────────────────
-fig4=figure('Position',[50 50 900 420]);
+fig4=figure('Position',[2000 2000 900 420]);
 hold on;
 x=1:n_bins;
 mu_N_h2=T2.mean_N'; mu_H_h2=T2.mean_H';
@@ -172,7 +172,7 @@ exportgraphics(fig4,fullfile(fig_dir,'summary_H2_mean.png'),'Resolution',180);
 
 % ── FIGURE 5: H3a post-training snapshot ──────────────────────────────
 tbl3s=h3s.snapshot;
-fig5=figure('Position',[50 50 1000 480]);
+fig5=figure('Position',[2000 2000 1000 480]);
 sgtitle('H3a — Post-training collision EDA: NHF vs HF (mean \pm 95% CI, individual dots)','FontWeight','bold','FontSize',11);
 panels={...
     {'collision_scr_amp_mean_bc','Baseline2','ER-SCR amplitude (fraction of resting tonic SCL, a.u.)'},...
@@ -213,7 +213,7 @@ exportgraphics(fig5,fullfile(fig_dir,'summary_H3a_snapshot.png'),'Resolution',18
 
 % ── FIGURE 6: H3b pre→post paired ─────────────────────────────────────
 tbl3t=h3s.transfer;
-fig6=figure('Position',[50 50 1000 480]);
+fig6=figure('Position',[2000 2000 1000 480]);
 sgtitle('H3b — Pre\rightarrowPost change in collision EDA (individual lines + group mean \pm 95% CI)','FontWeight','bold','FontSize',11);
 panels6={...
     {'collision_scr_amp_mean_bc','baseline','Baseline1','Baseline2','ER-SCR amplitude (fraction of resting tonic SCL, a.u.)'},...
@@ -257,7 +257,7 @@ fprintf('All summary figures saved to %s\n',fig_dir);
 %% ── SECTION: Descriptive plots for force/vibration & collision-impact outputs ──
 
 % ── Load tables ──────────────────────────────────────────────────────────
-FV   = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T');   FV = FV.T;
+FV   = load(fullfile(cfg.output_root,'force_vibration_features_clean.mat'),'T');   FV = FV.T;
 CI   = load(fullfile(cfg.output_root,'collision_impact_features.mat'),'T_impact'); CI = CI.T_impact;
 
 % Convenience colour map
@@ -266,12 +266,12 @@ CH_d = CH;   % HF
 
 % ── FIG D1: TSSV by phase-type and group (violin + mean±95%CI) ──────────
 phase_types = {'baseline','training','test'};
-fig_d1 = figure('Position',[50 50 1100 440]);
+fig_d1 = figure('Position',[2000 2000 1100 440]);
 sgtitle('Descriptive — TSSV by phase type and group','FontWeight','bold','FontSize',11);
 
 for pt = 1:numel(phase_types)
     ptype = phase_types{pt};
-    Tsub  = FV(strcmp(FV.phase_type, ptype) & isfinite(FV.tssv), :);
+    Tsub = FV(strcmp(FV.phase_type, ptype) & isfinite(FV.tssf), :);
 
     % Subject-mean TSSV
     subj = unique(Tsub.subject);
@@ -308,20 +308,19 @@ for pt = 1:numel(phase_types)
 end
 exportgraphics(fig_d1, fullfile(fig_dir,'desc_D1_tssv_by_phasetype.png'), 'Resolution',180);
 
-% ── FIG D2: TSSF_raw by phase-type and group ────────────────────────────
-fig_d2 = figure('Position',[50 50 1100 440]);
-sgtitle('Descriptive — TSSF_{raw} by phase type and group','FontWeight','bold','FontSize',11);
+% ── FIG D2: TSSF by phase-type and group ────────────────────────────
+fig_d2 = figure('Position',[2000 2000 1100 440]);
+sgtitle('Descriptive — TSSF by phase type and group','FontWeight','bold','FontSize',11);
 
 for pt = 1:numel(phase_types)
     ptype = phase_types{pt};
-    Tsub  = FV(strcmp(FV.phase_type, ptype) & isfinite(FV.tssf_raw), :);
-
+    Tsub = FV(strcmp(FV.phase_type, ptype) & isfinite(FV.tssf), :);
     subj = unique(Tsub.subject);
     xs   = nan(numel(subj),1);
     ihs  = false(numel(subj),1);
     for si = 1:numel(subj)
         s       = subj{si};
-        xs(si)  = mean(Tsub.tssf_raw(strcmp(Tsub.subject,s)), 'omitnan');
+        xs(si) = mean(Tsub.tssf(strcmp(Tsub.subject,s)), 'omitnan');
         ihs(si) = any(Tsub.haptic(strcmp(Tsub.subject,s)));
     end
     xN = xs(~ihs & isfinite(xs));
@@ -343,7 +342,7 @@ for pt = 1:numel(phase_types)
     end
 
     xticks([1 2]); xticklabels({'NHF','HF'});
-    ylabel('TSSF_{raw} (V^2, arb.)','FontSize',9);
+    ylabel('TSSF (N^2, calibrated)','FontSize',9);
     title(sprintf('%s\np_{rank-sum}=%s', ptype, local_pstr(p_rs)), 'FontSize',9,'Interpreter','none');
     grid on; xlim([0.5 2.5]);
 end
@@ -369,7 +368,7 @@ for lv = levels
     mu_H_tr(lv) = mean(xH,'omitnan'); se_H_tr(lv) = std(xH,'omitnan')/sqrt(numel(xH));
 end
 
-fig_d3 = figure('Position',[50 50 700 400]);
+fig_d3 = figure('Position',[2000 2000 700 400]);
 hold on;
 fill([levels fliplr(levels)], ...
      [mu_N_tr+1.96*se_N_tr fliplr(mu_N_tr-1.96*se_N_tr)], ...
@@ -386,7 +385,7 @@ set(gca,'XTick',1:5,'XTickLabel',{'L1','L2','L3','L4','L5'});
 exportgraphics(fig_d3, fullfile(fig_dir,'desc_D3_tssv_training_curve.png'), 'Resolution',180);
 
 % ── FIG D4: Per-collision impact_tssv distribution (log scale) ──────────
-fig_d4 = figure('Position',[50 50 900 420]);
+fig_d4 = figure('Position',[2000 2000 900 420]);
 sgtitle('Descriptive — Per-collision impact TSSV distribution by group & phase type', ...
         'FontWeight','bold','FontSize',11);
 
@@ -419,7 +418,7 @@ end
 exportgraphics(fig_d4, fullfile(fig_dir,'desc_D4_impact_tssv_dist.png'), 'Resolution',180);
 
 % ── FIG D5: Per-collision audio peak distribution by group ──────────────
-fig_d5 = figure('Position',[50 50 900 420]);
+fig_d5 = figure('Position',[2000 2000 900 420]);
 sgtitle('Descriptive — Per-collision peak audio by group & phase type', ...
         'FontWeight','bold','FontSize',11);
 
@@ -451,7 +450,7 @@ end
 exportgraphics(fig_d5, fullfile(fig_dir,'desc_D5_impact_audio_dist.png'), 'Resolution',180);
 
 % ── FIG D6: Collision count per acquisition by level & group ─────────────
-fig_d6 = figure('Position',[50 50 900 420]);
+fig_d6 = figure('Position',[2000 2000 900 420]);
 hold on;
 TR_ci = CI(strcmp(CI.phase_type,'training') & isfinite(CI.level), :);
 
@@ -495,7 +494,7 @@ set(gca,'XTick',1:5,'XTickLabel',{'L1','L2','L3','L4','L5'});
 exportgraphics(fig_d6, fullfile(fig_dir,'desc_D6_collision_count_curve.png'), 'Resolution',180);
 
 % ── FIG D7: impact_tssv vs impact_audio_peak scatter (training only) ────
-fig_d7 = figure('Position',[50 50 620 520]);
+fig_d7 = figure('Position',[2000 2000 620 520]);
 hold on;
 CI_tr = CI(strcmp(CI.phase_type,'training') & ...
            isfinite(CI.impact_tssv) & CI.impact_tssv > 0 & ...
@@ -523,9 +522,8 @@ legend('Location','best','FontSize',9); grid on; box on;
 exportgraphics(fig_d7, fullfile(fig_dir,'desc_D7_tssv_vs_audio_scatter.png'), 'Resolution',180);
 
 % ── FIG D8: Tertile tier breakdown — stacked bar by group ───────────────
-fig_d8 = figure('Position',[50 50 900 400]);
-sgtitle('Descriptive — Impact tier composition by group (training collisions)', ...
-        'FontWeight','bold','FontSize',11);
+fig_d8 = figure('Position',[2000 2000 900 400]);
+sgtitle('Descriptive — Impact tier composition by group (training collisions)','FontWeight','bold','FontSize',11);
 
 tier_vars  = {'impact_tier_tssv','impact_tier_tssf','impact_tier_audio'};
 tier_labels = {'Low','Mid','High'};

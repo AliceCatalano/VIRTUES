@@ -1,6 +1,6 @@
 %% h3_pupil_per_level_accel_bins.m
-% Pupil H3: collision-locked pupil dilation variance by peak_accel_g_nidaq bin
-% SAME bin structure as EDA H2: per-level, group-specific peak_accel_g_nidaq quartiles
+% Pupil H3: collision-locked pupil dilation variance by peak_accel_g bin
+% SAME bin structure as EDA H2: per-level, group-specific peak_accel_g quartiles
 
 clear; clc; close all; cfg = config();
 CN = [64 96 179]/255; CH = [139 82 168]/255;
@@ -35,7 +35,7 @@ for pt={'training','baseline','test'}
     fprintf('  %s: %d\n',pt{1},sum(strcmp(J_all.phase_type,pt{1})));
 end
 
-J_all = J_all(isfinite(J_all.pupil_response_norm) & isfinite(J_all.peak_accel_g_nidaq),:);
+J_all = J_all(isfinite(J_all.pupil_response_norm) & isfinite(J_all.peak_accel_g),:);
 fprintf('After cleaning: %d rows\n',height(J_all));
 
 all_results = struct();
@@ -43,7 +43,7 @@ levels = 1:5;
 
 %% Training: per level
 fprintf('\n=== TRAINING: Pupil H3 per level ===\n');
-fig_tr = figure('Position',[50 50 1800 900]);
+fig_tr = figure('Position',[2000 2000 1800 900]);
 tl_tr  = tiledlayout(4,5,'TileSpacing','compact','Padding','compact');
 title(tl_tr,'Pupil H3 Training — pupil dilation variance by peak\_accel\_g bin per level (group-specific quartiles)', ...
     'FontWeight','bold','FontSize',10);
@@ -53,10 +53,10 @@ for lv = levels
     fprintf('\nL%d: N=%d (NHF=%d HF=%d)\n',lv,height(J),sum(~J.(hap_col)),sum(J.(hap_col)));
     if height(J)<10, for b=1:4, nexttile; end; continue; end
 
-    eN = quantile(J.peak_accel_g_nidaq(~J.(hap_col)), qp);
-    eH = quantile(J.peak_accel_g_nidaq( J.(hap_col)), qp);
-    [~,~,bN] = histcounts(J.peak_accel_g_nidaq(~J.(hap_col)), eN);
-    [~,~,bH] = histcounts(J.peak_accel_g_nidaq( J.(hap_col)), eH);
+    eN = quantile(J.peak_accel_g(~J.(hap_col)), qp);
+    eH = quantile(J.peak_accel_g( J.(hap_col)), qp);
+    [~,~,bN] = histcounts(J.peak_accel_g(~J.(hap_col)), eN);
+    [~,~,bH] = histcounts(J.peak_accel_g( J.(hap_col)), eH);
     J.bin = zeros(height(J),1);
     J.bin(~J.(hap_col)) = bN; J.bin(J.(hap_col)) = bH;
 
@@ -110,7 +110,7 @@ exportgraphics(fig_tr,fullfile(fig_dir,'h3_pupil_training_per_level.png'),'Resol
 
 %% Baseline: per level
 fprintf('\n=== BASELINE: Pupil H3 per level ===\n');
-fig_bl = figure('Position',[50 50 1600 600]);
+fig_bl = figure('Position',[2000 2000 1600 600]);
 tl_bl  = tiledlayout(2,5,'TileSpacing','compact','Padding','compact');
 title(tl_bl,'Pupil H3 Baseline — pupil dilation SD ratio by peak\_accel\_g bin','FontWeight','bold','FontSize',10);
 
@@ -123,8 +123,8 @@ for bi=1:2
         if height(J)<6
             text(0.5,0.5,sprintf('%s L%d\nn=%d',bl_phase,lv,height(J)),'HorizontalAlignment','center','Units','normalized','FontSize',8); axis off; continue;
         end
-        eN=quantile(J.peak_accel_g_nidaq(~J.(hap_col)),qp); eH=quantile(J.peak_accel_g_nidaq(J.(hap_col)),qp);
-        [~,~,bN]=histcounts(J.peak_accel_g_nidaq(~J.(hap_col)),eN); [~,~,bH]=histcounts(J.peak_accel_g_nidaq(J.(hap_col)),eH);
+        eN=quantile(J.peak_accel_g(~J.(hap_col)),qp); eH=quantile(J.peak_accel_g(J.(hap_col)),qp);
+        [~,~,bN]=histcounts(J.peak_accel_g(~J.(hap_col)),eN); [~,~,bH]=histcounts(J.peak_accel_g(J.(hap_col)),eH);
         J.bin=zeros(height(J),1); J.bin(~J.(hap_col))=bN; J.bin(J.(hap_col))=bH;
         rows={};
         for b=1:4
@@ -163,20 +163,20 @@ exportgraphics(fig_bl,fullfile(fig_dir,'h3_pupil_baseline_per_level.png'),'Resol
 
 %% Test phases
 fprintf('\n=== TEST PHASES: Pupil H3 ===\n');
-fig_te=figure('Position',[50 50 1000 500]);
+fig_te=figure('Position',[2000 2000 1000 500]);
 tl_te=tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
 title(tl_te,'Pupil H3 Test — pupil dilation SD ratio by peak\_accel\_g bin','FontWeight','bold','FontSize',10);
 
 for ti=1:2
     te_phase=sprintf('Test%d',ti);
-    J=J_all(strcmp(J_all.phase,te_phase)&isfinite(J_all.peak_accel_g_nidaq),:);
+    J=J_all(strcmp(J_all.phase,te_phase)&isfinite(J_all.peak_accel_g),:);
     fprintf('\n%s: N=%d (NHF=%d HF=%d)\n',te_phase,height(J),sum(~J.(hap_col)),sum(J.(hap_col)));
     nexttile; hold on;
     if height(J)<6
         text(0.5,0.5,sprintf('%s\nn=%d',te_phase,height(J)),'HorizontalAlignment','center','Units','normalized'); axis off; continue;
     end
-    eN=quantile(J.peak_accel_g_nidaq(~J.(hap_col)),qp); eH=quantile(J.peak_accel_g_nidaq(J.(hap_col)),qp);
-    [~,~,bN]=histcounts(J.peak_accel_g_nidaq(~J.(hap_col)),eN); [~,~,bH]=histcounts(J.peak_accel_g_nidaq(J.(hap_col)),eH);
+    eN=quantile(J.peak_accel_g(~J.(hap_col)),qp); eH=quantile(J.peak_accel_g(J.(hap_col)),qp);
+    [~,~,bN]=histcounts(J.peak_accel_g(~J.(hap_col)),eN); [~,~,bH]=histcounts(J.peak_accel_g(J.(hap_col)),eH);
     J.bin=zeros(height(J),1); J.bin(~J.(hap_col))=bN; J.bin(J.(hap_col))=bH;
     rows={};
     for b=1:4

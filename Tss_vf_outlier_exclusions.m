@@ -17,7 +17,7 @@ fprintf('  TSSV valid: %d  NaN: %d\n',sum(isfinite(T.tssv)&T.tssv>0),sum(~isfini
 fprintf('  TSSF valid: %d  NaN: %d\n',sum(isfinite(T.tssf)&T.tssf>0),sum(~isfinite(T.tssf)|T.tssf<=0));
 
 %% Whole-subject exclusions (unchanged)
-tssv_subj_excl = {'subject_s09N','subject_s12H'};
+tssv_subj_excl = {'subject_s09N','subject_s10H','subject_s11N','subject_s12H','subject_s23H','subject_s44N','subject_s48N'};
 tssf_subj_excl = {'subject_s03H','subject_s04H'};
 for si=1:numel(tssv_subj_excl)
     s=tssv_subj_excl{si};

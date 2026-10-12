@@ -22,7 +22,7 @@
 clear; clc;
 cfg = config();
 
-feat_file = fullfile(cfg.output_root, 'eda_features.mat');
+feat_file = fullfile(cfg.output_root, 'eda_features_v2.mat');
 if ~isfile(feat_file)
     fprintf('No cached feature table found -- running gsr_extract_features (this walks all subjects/acquisitions and may take a while)...\n');
     T = gsr_extract_features(cfg);
@@ -33,7 +33,7 @@ else
     T = loaded.T;
 end
 
-outcomes = {'scl_mean', 'scr_freq', 'scr_mean_amp'};
+outcomes = {'scl_mean_bc', 'scr_freq', 'scr_mean_amp_bc'};
 % collision_scr_amp_mean is intentionally excluded here: Baseline/Test
 % acquisitions are single unrepeated trials, and collision counts per
 % single trial are typically too sparse for a stable collision-locked
