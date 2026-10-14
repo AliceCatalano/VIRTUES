@@ -8,7 +8,7 @@
 clear; clc;close all;
 
 output_root    = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
-mat_folder     = fullfile(output_root, 'subject_s20N', 'level_L2/rep_05'); %, 'Level1'
+mat_folder     = fullfile(output_root, 'subject_s23H', 'Baseline2/Level3/'); %, 'Level1'
 
 bp_lo = 80; bp_hi = 1000;
 
@@ -207,6 +207,7 @@ function plot_bp_6panel(t, x, y, z, event_times, Fs, bp_lo, bp_hi, label)
 
     linkaxes([ax1 ax2 ax3 ax4],'x'); xlabel(ax4,'Time (s)');
 end
+%%
 
 function plot_raw6(t, tbl, chan_names, side_labels, axis_labels, event_times, ttl)
     ch_colors = {[0.8 0.1 0.1],[0.1 0.6 0.1],[0.1 0.2 0.8],[1.0 0.5 0.0],[0.0 0.7 0.7],[0.6 0.0 0.8]};
