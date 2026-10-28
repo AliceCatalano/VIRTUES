@@ -92,8 +92,76 @@ function plot_level_divergence(cfg)
 
     saveas(fig, fullfile(fig_dir, 'level_divergence.png'));
     fprintf('Saved %s\n', fullfile(fig_dir, 'level_divergence.png'));
-end
 
-function out = local_ternary(cond, a, b)
-    if cond, out = a; else, out = b; end
+%% Add to plot_level_divergence_fixed.m — eye tracking version
+
+    eye_res_file = fullfile(cfg.output_root, 'eye_lmm_results.mat');
+    if isfile(eye_res_file)
+        Reye = load(eye_res_file, 'results', 'outcomes');
+        
+        fprintf('\nEye outcomes in eye_lmm_results.mat:\n');
+        for i = 1:numel(Reye.outcomes)
+            fprintf('  %d: %s\n', i, Reye.outcomes{i});
+        end
+        
+        eye_panels = {
+            'gaze_entropy',    'Gaze entropy (bits)'
+            'fixation_rate',   'Fixation rate (fix/min)'
+            'pupil_mean_norm', 'Normalised pupil'
+            'collision_pupil_response_mean', 'Collision pupil'
+        };
+        
+        fig2 = figure('Name','Eye Level Divergence','Position',[50 50 1500 400]);
+        sgtitle('Eye-tracking: Level effect (vs. Level 1), NHF vs HF',...
+            'FontWeight','bold','FontSize',11);
+        
+        for k = 1:size(eye_panels,1)
+            outcome_key   = eye_panels{k,1};
+            outcome_label = eye_panels{k,2};
+            subplot(1,4,k); hold on;
+            
+            oi = find(strcmp(Reye.outcomes, outcome_key), 1);
+            if isempty(oi)
+                title(sprintf('%s\n(not found)',strrep(outcome_key,'_',' ')),'FontSize',9);
+                continue;
+            end
+            
+            se = Reye.results{oi}.simple_effects;
+            is_level = ~cellfun('isempty', regexp(se.effect,'^level \d+ vs level 1$','once'));
+            se = se(is_level,:);
+            if isempty(se), continue; end
+            
+            lvl_num = cellfun(@(s) sscanf(s,'level %d vs level 1'), se.effect);
+            n_sig = 0;
+            for grp = {'N','H'}
+                g = grp{1}; mask = strcmp(se.group,g);
+                if ~any(mask), continue; end
+                x = lvl_num(mask); [x,ord]=sort(x);
+                y = se.beta(mask); y=y(ord);
+                lo=se.lower(mask); lo=lo(ord);
+                hi=se.upper(mask); hi=hi(ord);
+                pv=se.p(mask);     pv=pv(ord);
+                col=local_ternary(strcmp(g,'H'),COLOR_H,COLOR_N);
+                errorbar(x,y,y-lo,hi-y,'-','Color',col,'LineWidth',1.6,...
+                    'CapSize',4,'DisplayName',local_ternary(strcmp(g,'H'),'HF','NHF'));
+                is_sig=pv<0.05; n_sig=n_sig+sum(is_sig);
+                if any(is_sig),  scatter(x(is_sig), y(is_sig), 55,col,'filled','HandleVisibility','off'); end
+                if any(~is_sig), scatter(x(~is_sig),y(~is_sig),55,col,'HandleVisibility','off'); end
+            end
+            
+            yline(0,':k','HandleVisibility','off');
+            
+            xlabel('Level (vs. 1)','FontSize',9); ylabel('\beta','FontSize',9);
+            xlim([1.5 5.5]); xticks(2:5);
+            title(sprintf('%s\n%d/8 sig.',outcome_label,n_sig),'FontSize',9,'Interpreter','tex');
+            if k==1, legend('Location','best','FontSize',8); end
+            grid on;
+        end
+        
+        saveas(fig2, fullfile(fig_dir,'level_divergence_eye_fixed.png'));
+        fprintf('Saved level_divergence_eye_fixed.png\n');
+    end
+    function out = local_ternary(cond, a, b)
+        if cond, out = a; else, out = b; end
+    end
 end

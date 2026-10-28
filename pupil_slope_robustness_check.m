@@ -39,7 +39,7 @@
 % Requires cfg.output_root/merged_features.mat WITH pupil_slope_norm
 % (i.e. eye_extract_features(cfg) and merge_modality_tables(cfg) must be
 % rerun after pulling the pupil_slope_norm addition -- delete
-% eye_features.mat/merged_features.mat first if they predate it).
+% eye_features_v2.mat/merged_features.mat first if they predate it).
 
 clear; clc;
 cfg = config();
@@ -53,7 +53,7 @@ T = loaded.T;
 
 if ~ismember('pupil_slope_norm', T.Properties.VariableNames)
     error(['pupil_slope_robustness_check: merged_features.mat has no pupil_slope_norm column. ' ...
-        'Delete eye_features.mat and merged_features.mat and rerun eye_extract_features(cfg) then ' ...
+        'Delete eye_features_v2.mat and merged_features.mat and rerun eye_extract_features(cfg) then ' ...
         'merge_modality_tables(cfg) to regenerate them with the new column.']);
 end
 

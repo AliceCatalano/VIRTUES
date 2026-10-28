@@ -15,7 +15,7 @@ function plot_learning_curves(cfg)
 % visual context alongside Table 1 in the paper, not as a substitute for
 % the reported beta/p values.
 %
-% Requires cfg.output_root/eda_features.mat, eye_features.mat, and
+% Requires cfg.output_root/eda_features.mat, eye_features_v2.mat, and
 % perf_features.mat to already exist (run gsr_extract_features(cfg) /
 % eye_extract_features(cfg) / perf_extract_features(cfg) first if not).
 

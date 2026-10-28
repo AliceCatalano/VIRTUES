@@ -36,7 +36,7 @@
 clear; clc;
 cfg = config();
 
-eye_file = fullfile(cfg.output_root, 'eye_features.mat');
+eye_file = fullfile(cfg.output_root, 'eye_features_v2.mat');
 if ~isfile(eye_file)
     error('eye_measures_duration_check: run eye_extract_features(cfg) first.');
 end
@@ -44,8 +44,8 @@ loaded = load(eye_file, 'T');
 Teye = loaded.T;
 
 if ~ismember('valid_duration_s', Teye.Properties.VariableNames)
-    error(['eye_measures_duration_check: eye_features.mat has no valid_duration_s column -- ' ...
-        'delete eye_features.mat and rerun eye_extract_features(cfg) to regenerate it with the new column.']);
+    error(['eye_measures_duration_check: eye_features_v2.mat has no valid_duration_s column -- ' ...
+        'delete eye_features_v2.mat and rerun eye_extract_features(cfg) to regenerate it with the new column.']);
 end
 
 merged_file = fullfile(cfg.output_root, 'merged_features.mat');

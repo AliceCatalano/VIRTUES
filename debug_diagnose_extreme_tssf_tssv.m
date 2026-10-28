@@ -4,7 +4,7 @@ C_force = load_ati_cal(cfg.force_cal_path);
 fig_dir = fullfile(cfg.output_root,'figures','diagnosis');
 if ~exist(fig_dir,'dir'), mkdir(fig_dir); end
 
-FV_raw = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T'); T_raw=FV_raw.T;
+FV_raw = load(fullfile(cfg.output_root,'force_vibration_features_clean.mat'),'T'); T_raw=FV_raw.T;
 
 % -------------------------------------------------------------------------
 % TSSF: the 3 subjects with actual removals in the clean table For each subject take their 3 highest and 3 lowest training trials

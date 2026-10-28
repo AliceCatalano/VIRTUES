@@ -25,7 +25,7 @@ clear; clc;
 cfg = config();
 
 perf_file = fullfile(cfg.output_root, 'perf_features.mat');
-fv_file   = fullfile(cfg.output_root, 'force_vibration_features.mat');
+fv_file   = fullfile(cfg.output_root, 'force_vibration_features_clean.mat');
 if ~isfile(perf_file)
     error('run_completion_tssf_tssv_sessiontiming: run perf_extract_features(cfg) first.');
 end
@@ -39,7 +39,7 @@ Tfv   = load(fv_file,   'T'); Tfv   = Tfv.T;
 join_keys = {'subject','phase_type','phase','acquisition','level','repetition','group','haptic'};
 Tmerged = innerjoin(Tperf, Tfv, 'Keys', join_keys);
 
-outcomes = {'duration_s', 'tssf_raw', 'tssv'};
+outcomes = {'duration_s', 'tssf', 'tssv'};
 results = cell(numel(outcomes), 1);
 for i = 1:numel(outcomes)
     results{i} = perf_sessiontiming_lmm(Tmerged, outcomes{i}, 3, 3);

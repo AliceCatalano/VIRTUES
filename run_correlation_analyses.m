@@ -37,7 +37,7 @@ cfg = config();
 
 merged_file = fullfile(cfg.output_root, 'merged_features.mat');
 if ~isfile(merged_file)
-    fprintf('No cached merged table found -- running merge_modality_tables (requires eda_features.mat, eye_features.mat, perf_features.mat to already exist)...\n');
+    fprintf('No cached merged table found -- running merge_modality_tables (requires eda_features.mat, eye_features_v2.mat, perf_features.mat to already exist)...\n');
     T = merge_modality_tables(cfg);
 else
     fprintf('Loading cached merged table from %s\n', merged_file);

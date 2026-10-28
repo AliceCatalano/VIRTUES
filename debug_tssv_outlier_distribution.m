@@ -66,7 +66,7 @@ for mi=1:2
         vr = log(T_raw.(oc)(strcmp(T_raw.phase_type,'training')&T_raw.level==lv&isfinite(T_raw.(oc))&T_raw.(oc)>0));
         vc = log(T_cln.(oc)(strcmp(T_cln.phase_type,'training')&T_cln.level==lv&isfinite(T_cln.(oc))&T_cln.(oc)>0));
         nexttile; hold on;
-        histogram(vr,30,'FaceColor',[0.7 0.7 0.7],'EdgeColor','none','FaceAlpha',0.7, Normalization','probability','DisplayName',sprintf('RAW n=%d',numel(vr)));
+        histogram(vr,30,'FaceColor',[0.7 0.7 0.7],'EdgeColor','none','FaceAlpha',0.7, 'Normalization','probability','DisplayName',sprintf('RAW n=%d',numel(vr)));
         histogram(vc,30,'FaceColor',[0.2 0.5 0.8],'EdgeColor','none','FaceAlpha',0.7, 'Normalization','probability','DisplayName',sprintf('CLEAN n=%d',numel(vc)));
         xlabel(sprintf('log-%s',upper(oc)),'FontSize',8); ylabel('Proportion','FontSize',8);
         title(sprintf('L%d  removed=%d',lv,numel(vr)-numel(vc)),'FontSize',9);

@@ -6,19 +6,19 @@ CN = [64 96 179]/255; CH = [139 82 168]/255;
 fprintf('=== Generating all report figures ===\n\n');
 
 %% ── FIX 1: column name patch ─────────────────────────────────────────────
-% force_vibration_features.mat now has 'tssf' not 'tssf_raw'
+% force_vibration_features.mat now has 'tssf' not 'tssf'
 % patch the table once so all downstream functions work
-fv_path = fullfile(cfg.output_root,'force_vibration_features.mat');
+fv_path = fullfile(cfg.output_root,'force_vibration_features_clean.mat');
 if isfile(fv_path)
     FV_raw = load(fv_path,'T'); FV_patch = FV_raw.T;
-    if ismember('tssf',FV_patch.Properties.VariableNames) && ~ismember('tssf_raw',FV_patch.Properties.VariableNames)
-        FV_patch.tssf_raw = FV_patch.tssf;
+    if ismember('tssf',FV_patch.Properties.VariableNames) && ~ismember('tssf',FV_patch.Properties.VariableNames)
+        FV_patch.tssf = FV_patch.tssf;
         save(fv_path,'FV_patch','-append');
         % reload with correct variable name
         save(fv_path,'-struct','FV_raw');
         FV_patch2.T = FV_patch;
         save(fv_path,'-struct','FV_patch2');
-        fprintf('Patched force_vibration_features.mat: added tssf_raw alias\n');
+        fprintf('Patched force_vibration_features.mat: added tssf alias\n');
     end
 end
 

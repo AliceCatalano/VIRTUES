@@ -22,34 +22,34 @@ clear; clc; close all;
 %% SECTION 1 — FIXED PARAMETERS (edit as needed)
 BASE_FOLDER   = '~/Desktop/Virtues_Data';
 
-% --- Display downsampling ---
+%  Display downsampling 
 TARGET_FS            = 500;        % Hz — accelerometer display target
 SHOW_RAW_CH          = true;       % show individual X/Y/Z subplots
 
-% --- Audio detection ---
+%  Audio detection 
 AUDIO_BP_LOW         = 80;         % Hz
 AUDIO_BP_HIGH        = 1000;       % Hz
 AUDIO_RMS_WIN_SEC    = 0.02;       % no longer used for detection (RMS envelope step removed -- see audio_side_abs_sum); kept only as a provenance field in results.params
 PEAK_MIN_DIST_SEC    = 1;        % minimum gap between detections (s)
 
-%% >>> NEW — validated fixed threshold (replaces adaptive mean-based one)
+%% NEW — validated fixed threshold (replaces adaptive mean-based one)
 FIXED_AUDIO_THRESHOLD = 0.03;     % absolute amplitude threshold, same for all subjects
 
-%% >>> NEW — review-trigger range
+%% NEW — review-trigger range
 REVIEW_LOW_N  = 2;      % review if n_collisions < this
 REVIEW_HIGH_N = 10;     % review if n_collisions > this
 
-% --- Intensity readout window ---
+%  Intensity readout window 
 INTENSITY_WIN_SEC    = 0.10;       % ± half-window around each collision (s)
 
-% --- Plot limits ([] = auto) ---
+%  Plot limits ([] = auto) 
 YLIM_ACCEL           = [0 15];
 YLIM_AUDIO           = [];
 
 %% SECTION 2 — ASK USER FOR SUBJECT + PHASE
 base = expanduser(BASE_FOLDER);
 
-SUBJECT = 's07N';
+SUBJECT = 'io';
 
 % Test1/Test2 (Peg Transfer) included here, but see SECTION 3 -- unlike
 % Baseline/training, they are a single continuous acquisition with no
@@ -213,7 +213,7 @@ for aIdx = 1:numel(acquisitions)
             continue;
         end
         
-        % ---- AUTO-DETECT (adaptive threshold, no plot, no prompt) ----
+        % - AUTO-DETECT (adaptive threshold, no plot, no prompt) -
         thresh =0.02;
         
         [~, locs] = findpeaks(env_trial, t_trial, 'MinPeakDistance', PEAK_MIN_DIST_SEC, 'MinPeakHeight', thresh);
@@ -284,7 +284,7 @@ for aIdx = 1:numel(acquisitions)
         FIXED_AUDIO_THRESHOLD, INTENSITY_WIN_SEC, SUBJECT, PHASE, ACQUISITION);
 
     %% INTERACTIVE REVIEW LOOP FOR THIS ACQUISITION
-    fprintf('\n--- Reviewing %s (n=%d) ---\n', ACQUISITION, n_coll);
+    fprintf('\n Reviewing %s (n=%d) \n', ACQUISITION, n_coll);
     fprintf('  a = add a collision | d = delete by index | 0 = save & go to NEXT acquisition | q = quit entirely\n\n');
 
     quitAll = false;
@@ -399,7 +399,7 @@ function results = build_results(SUBJECT, PHASE, ACQUISITION, acq_folder, t0_uni
 end
 
 function print_collision_list(coll_t, intens_g, intens_audio)
-    fprintf('\n--- Current collisions (%d) ---\n', numel(coll_t));
+    fprintf('\n Current collisions (%d) \n', numel(coll_t));
     for ci = 1:numel(coll_t)
         fprintf('  [%02d]  t = %7.3f s   |  peak-g = %6.2f   |  peak-audio = %.5f\n', ...
             ci, coll_t(ci), intens_g(ci), intens_audio(ci));

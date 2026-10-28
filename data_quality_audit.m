@@ -105,9 +105,9 @@ end
 fprintf('\n--- 3. NaN rate per outcome (within its own table) ---\n');
 outcome_tables = {
     'eda_features.mat',             {'scl_mean','scr_freq','scr_mean_amp','collision_scr_amp_mean'}
-    'eye_features.mat',             {'pupil_mean','pupil_slope_norm','gaze_dispersion','saccade_rate','collision_pupil_response_mean'}
+    'eye_features_v2.mat',             {'pupil_mean','pupil_slope_norm','gaze_dispersion','saccade_rate','collision_pupil_response_mean'}
     'perf_features.mat',            {'duration_s','n_collisions'}
-    'force_vibration_features.mat', {'tssf_raw','tssv'}
+    'force_vibration_features_clean.mat', {'tssf','tssv'}
     };
 for i = 1:size(outcome_tables, 1)
     path = fullfile(cfg.output_root, outcome_tables{i,1});

@@ -1,79 +1,63 @@
 import os
-import sys
 import cv2
 import numpy as np
-import zstandard as zstd
-from mcap.reader import make_reader
-from mcap_ros2.decoder import DecoderFactory
-import tempfile
+from rosbags.rosbag2 import Reader
+from rosbags.typesys import Stores, get_typestore
 
-BASE = "/run/user/1003/gvfs/smb-share:server=synkjk02.local,share=user%20study"
+bag_dir = "/home/acatalano/Desktop/Virtues_Data/subject_io/videos/Test1/video_bag_20261019_152742"
+output  = os.path.join(bag_dir, "video.mp4")
 
-subject = sys.argv[1]
-section = sys.argv[2]
-trial   = sys.argv[3]
+typestore = get_typestore(Stores.ROS2_HUMBLE)
 
-folder = os.path.join(
-    BASE,f"subject_{subject}",
-    "videos",section,trial
-)
+with Reader(bag_dir) as reader:
+    print("Topics:")
+    for conn in reader.connections:
+        print(f"  {conn.topic}  [{conn.msgtype}]")
 
-zstd_file = os.path.join(folder, "video_bag", "video_bag_0.mcap.zstd")
+    image_conns = [c for c in reader.connections if 'image' in c.topic.lower()]
+    if not image_conns:
+        image_conns = list(reader.connections)
+    print(f"\nUsing topic: {image_conns[0].topic}")
 
-if not os.path.isfile(zstd_file):
-    raise FileNotFoundError(zstd_file)
+    writer      = None
+    fps         = 30
+    frame_count = 0
 
-print("Decompressing...")
+    for conn, ts, rawdata in reader.messages(connections=image_conns):
+        msg = typestore.deserialize_cdr(rawdata, conn.msgtype)
 
-tmp_mcap = tempfile.NamedTemporaryFile(suffix=".mcap", delete=False).name
+        arr = np.frombuffer(msg.data, dtype=np.uint8)
+        enc = msg.encoding
 
-with open(zstd_file, "rb") as compressed:
-    dctx = zstd.ZstdDecompressor()
-    with open(tmp_mcap, "wb") as out:
-        dctx.copy_stream(compressed, out)
+        if enc in ('rgb8',):
+            frame = cv2.cvtColor(arr.reshape((msg.height, msg.width, 3)), cv2.COLOR_RGB2BGR)
+        elif enc in ('bgr8',):
+            frame = arr.reshape((msg.height, msg.width, 3))
+        elif enc in ('mono8',):
+            frame = cv2.cvtColor(arr.reshape((msg.height, msg.width)), cv2.COLOR_GRAY2BGR)
+        elif enc in ('jpeg', 'compressed'):
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                frame = arr.reshape((msg.height, msg.width, -1))
 
-print("Reading MCAP...")
+        if frame is None:
+            continue
 
-output_mp4 = os.path.join(folder, "video.mp4")
+        if writer is None:
+            h, w = frame.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            writer = cv2.VideoWriter(output, fourcc, fps, (w, h))
+            print(f"Writing {w}x{h}  enc={enc}")
 
-reader = make_reader(open(tmp_mcap, "rb"), decoder_factories=[DecoderFactory()])
+        writer.write(frame)
+        frame_count += 1
+        if frame_count % 100 == 0:
+            print(f"  {frame_count} frames...")
 
-writer = None
-fps = 30
-
-frame_count = 0
-
-for schema, channel, message, ros_msg in reader.iter_decoded_messages():
-
-    if channel.topic != "/endoscope/right/image_raw":
-        continue
-
-    img = ros_msg.data
-    height = ros_msg.height
-    width  = ros_msg.width
-
-    frame = (
-        cv2
-        .imdecode(
-            np.frombuffer(img, dtype=np.uint8),
-            cv2.IMREAD_COLOR
-        )
-    )
-
-    if writer is None:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(
-            output_mp4,
-            fourcc,
-            fps,
-            (width, height)
-        )
-
-    writer.write(frame)
-    frame_count += 1
-
-if writer is not None:
+if writer:
     writer.release()
-
-print(f"Saved: {output_mp4}")
-print(f"Frames: {frame_count}")
+    print(f"\nSaved: {output}  ({frame_count} frames)")
+else:
+    print("No frames written")

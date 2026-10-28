@@ -1,37 +1,39 @@
 %% plot_unified_trends_and_transfers.m
-% Consolidates the RAW-DATA trend-by-level/rep figures and the paired
-% pre/post transfer figures that were reimplemented separately across:
-%   plot_tss_vf_present.m (Parts 3-5), Plot_paper_figures.m (Figs 1,2,4,7,12),
-%   Plot_summary.m (descriptive D3,D6), plot_all.m (perf figures),
-%   plot_transfer_paired_estimation.m, plot_before_after_cleaning.m
-% into TWO reusable engines. Both engines show: faint individual-subject
-% lines, bold group mean +/- 95% CI, the extreme subject at every
-% x-position labeled by ID, and a BEFORE/AFTER exclusion side-by-side.
+% Consolidated version of your two pasted copies (an older header +
+% the full "flatcheck" version appended after it) -- this is ONE clean
+% file, not two overlapping ones.
 %
-% NOT included here -- different patterns, not safe to guess at:
-%   - Plot_paper_figures.m Figs 5,6,9,10,11: these plot PRE-FIT LMM
-%     simple-effects contrasts loaded from a saved .mat (lmm_eda.results,
-%     lmm_eye.results), not raw data. Rebuilding from raw means would
-%     silently give a different, less-adjusted number. Tell me the
-%     filename/struct layout those LMM results are saved under and I'll
-%     add a third engine for this pattern specifically.
-%   - P0/P1/P2/P6 (single-subject/cohort raw-distribution plots),
-%     Fig8 (the known duplicate-panel bug), Fig14-17 (scatter/heatmap/
-%     bar chart -- different visual pattern), D1/D2/D4/D5/D7/D8
-%     (distributions/scatter/tier composition), TSSF ANCOVA diagnostic.
+% CHANGE 1 (what you asked for): tssv_known_bad / tssf_known_bad are no
+% longer hardcoded here. They're loaded from accel_exclusion_lists.mat,
+% which accel_exclusion_list.m now saves -- that script is the single
+% source of truth; this one just reads it. Run accel_exclusion_list.m
+% first if accel_exclusion_lists.mat doesn't exist yet.
 %
-% EYE TABLE COLUMN NAMES: I used pupil_mean_norm, saccade_rate,
-% gaze_dispersion -- the names confirmed elsewhere in your codebase
-% (run_training_lmms_3way.m). Plot_paper_figures.m separately uses
-% gaze_entropy and a fixation-rate metric I could not confirm the exact
-% column name for -- if your eye_features_v2.mat has those as separate
-% columns from gaze_dispersion, swap them into eye_metrics below.
+% CHANGE 2 (a real fix found while doing #1): the AFTER panel previously
+% only removed WHOLE-SUBJECT exclusions (a subject-name mask applied to
+% the raw table) -- it never applied your per-acquisition exclusions
+% (e.g. s20N/s45H/s36N specific levels/reps). force_vibration_features_
+% clean.mat already has BOTH kinds of exclusion correctly NaN'd in, so
+% the AFTER panel now loads that file directly and filters on
+% isfinite(), instead of re-deriving a coarser mask from the raw table.
+% EDA/eye/perf have no separate "clean" file (no acquisition-level
+% exclusions exist for them), so for those three the AFTER panel still
+% falls back to the same subject-name mask as before -- unchanged
+% behavior there.
+%
+% EYE TABLE COLUMN NAMES: pupil_mean_norm, saccade_rate, gaze_dispersion
+% -- confirmed elsewhere in your codebase (run_training_lmms_3way.m).
 
 clear; clc; cfg = config();
 if ~exist(fullfile(cfg.output_root,'figures'),'dir'), mkdir(fullfile(cfg.output_root,'figures')); end
 
-tssv_known_bad = {'subject_s02N','subject_s05N','subject_s09N','subject_s10H','subject_s11N','subject_s12H','subject_s23H','subject_s44N'};
-tssf_known_bad = {'subject_s02N','subject_s05N','subject_s03H','subject_s04H'};
+excl_path = fullfile(cfg.output_root,'accel_exclusion_lists.mat');
+if ~isfile(excl_path)
+    error('plot_unified_trends_and_transfers: run accel_exclusion_list.m first (it saves accel_exclusion_lists.mat).');
+end
+excl = load(excl_path, 'tssv_subj_excl','tssf_subj_excl');
+tssv_known_bad = excl.tssv_subj_excl;
+tssf_known_bad = excl.tssf_subj_excl;
 eda_known_bad  = {};                                   % fill in if you have EDA-specific exclusions
 eye_known_bad  = {'subject_s12H','subject_s15H'};      % per the methods doc
 perf_known_bad = {};
@@ -39,117 +41,88 @@ perf_known_bad = {};
 
 %% ENGINE A: raw-data trend by level or repetition
 
-FV = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T'); FV = FV.T;
-local_trend_plot(FV, 'tssv', 'log(TSSV)', 'level', tssv_known_bad, cfg, true);
-local_trend_plot(FV, 'tssf', 'log(TSSF)', 'level', tssf_known_bad, cfg, true);
-local_trend_plot(FV, 'tssv', 'log(TSSV)', 'rep',   tssv_known_bad, cfg, true);
-local_trend_plot(FV, 'tssf', 'log(TSSF)', 'rep',   tssf_known_bad, cfg, true);
+FV       = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T'); FV = FV.T;
+FV_clean = load(fullfile(cfg.output_root,'force_vibration_features_clean.mat'),'T'); FV_clean = FV_clean.T;
+
+local_trend_plot(FV, FV_clean, 'tssv', 'log(TSSV)', 'level', tssv_known_bad, cfg, true);
+local_trend_plot(FV, FV_clean, 'tssf', 'log(TSSF)', 'level', tssf_known_bad, cfg, true);
+local_trend_plot(FV, FV_clean, 'tssv', 'log(TSSV)', 'rep',   tssv_known_bad, cfg, true);
+local_trend_plot(FV, FV_clean, 'tssf', 'log(TSSF)', 'rep',   tssf_known_bad, cfg, true);
 
 if isfile(fullfile(cfg.output_root,'perf_features.mat'))
     PERF = load(fullfile(cfg.output_root,'perf_features.mat'),'T'); PERF = PERF.T;
-    local_trend_plot(PERF, 'duration_s',   'Completion time (s)',  'rep',   perf_known_bad, cfg, false);
-    local_trend_plot(PERF, 'n_collisions', 'Collisions per trial', 'level', perf_known_bad, cfg, false);
+    % No separate "clean" file for perf -- pass PERF as both raw and
+    % after-table, which makes the AFTER panel fall back to the
+    % known_bad mask (perf_known_bad is empty, so before==after here).
+    local_trend_plot(PERF, PERF, 'duration_s',   'Completion time (s)',  'rep',   perf_known_bad, cfg, false);
+    local_trend_plot(PERF, PERF, 'n_collisions', 'Collisions per trial', 'level', perf_known_bad, cfg, false);
 end
 
 
 %% ENGINE B: paired pre/post transfer (Baseline1->2 and Test1->2)
 
-local_paired_plot(FV, 'tssv', 'log(TSSV)', 'baseline','Baseline1','Baseline2', tssv_known_bad, cfg);
-local_paired_plot(FV, 'tssf', 'log(TSSF)', 'baseline','Baseline1','Baseline2', tssf_known_bad, cfg);
-local_paired_plot(FV, 'tssv', 'log(TSSV)', 'test','Test1','Test2', tssv_known_bad, cfg);
-local_paired_plot(FV, 'tssf', 'log(TSSF)', 'test','Test1','Test2', tssf_known_bad, cfg);
+local_paired_plot(FV, FV_clean, 'tssv', 'log(TSSV)', 'baseline','Baseline1','Baseline2', tssv_known_bad, cfg);
+local_paired_plot(FV, FV_clean, 'tssf', 'log(TSSF)', 'baseline','Baseline1','Baseline2', tssf_known_bad, cfg);
+local_paired_plot(FV, FV_clean, 'tssv', 'log(TSSV)', 'test','Test1','Test2', tssv_known_bad, cfg);
+local_paired_plot(FV, FV_clean, 'tssf', 'log(TSSF)', 'test','Test1','Test2', tssf_known_bad, cfg);
 
-if isfile(fullfile(cfg.output_root,'eda_features_v2.mat'))
+%%
+ if isfile(fullfile(cfg.output_root,'eda_features_v2.mat'))
     EDA = load(fullfile(cfg.output_root,'eda_features_v2.mat'),'T'); EDA = EDA.T;
-    local_paired_plot(EDA, 'scl_mean_bc', 'Tonic SCL (\muS)', 'baseline','Baseline1','Baseline2', eda_known_bad, cfg);
-    local_paired_plot(EDA, 'scr_freq', 'SCR frequency (events/min)', 'baseline','Baseline1','Baseline2', eda_known_bad, cfg);
-    local_paired_plot(EDA, 'scl_mean_bc', 'Tonic SCL (\muS)', 'test','Test1','Test2', eda_known_bad, cfg);
-    local_paired_plot(EDA, 'scr_freq', 'SCR frequency (events/min)', 'test','Test1','Test2', eda_known_bad, cfg);
+    local_paired_plot(EDA, EDA, 'scl_mean_bc', 'Tonic SCL (\muS)', 'baseline','Baseline1','Baseline2', eda_known_bad, cfg);
+    local_paired_plot(EDA, EDA, 'scr_freq', 'SCR frequency (events/min)', 'baseline','Baseline1','Baseline2', eda_known_bad, cfg);
+    local_paired_plot(EDA, EDA, 'scl_mean_bc', 'Tonic SCL (\muS)', 'test','Test1','Test2', eda_known_bad, cfg);
+    local_paired_plot(EDA, EDA, 'scr_freq', 'SCR frequency (events/min)', 'test','Test1','Test2', eda_known_bad, cfg);
 end
 
 if isfile(fullfile(cfg.output_root,'eye_features_v2.mat'))
     EYE = load(fullfile(cfg.output_root,'eye_features_v2.mat'),'T'); EYE = EYE.T;
     eye_metrics = {'pupil_mean_norm','Pupil (norm.)'; 'saccade_rate','Saccade rate (/min)'; 'gaze_dispersion','Gaze dispersion'};
     for i = 1:size(eye_metrics,1)
-        local_paired_plot(EYE, eye_metrics{i,1}, eye_metrics{i,2}, 'baseline','Baseline1','Baseline2', eye_known_bad, cfg);
+        local_paired_plot(EYE, EYE, eye_metrics{i,1}, eye_metrics{i,2}, 'baseline','Baseline1','Baseline2', eye_known_bad, cfg);
     end
 end
 
 if isfile(fullfile(cfg.output_root,'perf_features.mat'))
-    local_paired_plot(PERF, 'duration_s', 'Completion time (s)', 'baseline','Baseline1','Baseline2', perf_known_bad, cfg);
-    local_paired_plot(PERF, 'n_collisions', 'Collisions per trial', 'baseline','Baseline1','Baseline2', perf_known_bad, cfg);
+    local_paired_plot(PERF, PERF, 'duration_s', 'Completion time (s)', 'baseline','Baseline1','Baseline2', perf_known_bad, cfg);
+    local_paired_plot(PERF, PERF, 'n_collisions', 'Collisions per trial', 'baseline','Baseline1','Baseline2', perf_known_bad, cfg);
 end
 
 fprintf('\nAll figures saved to %s\n', fullfile(cfg.output_root,'figures'));
 
 
+%% ========================================================================
 %% ENGINE A: trend by level/repetition
+%% ========================================================================
 
-%% plot_trend_before_after_flatcheck.m
-% Your trend-by-level/rep script (Engine A), with two additions you
-% asked for:
-%   1) known_bad subjects' lines are drawn thicker/darker in the BEFORE
-%      panel (no text label) so you can SEE which lines exclusion is
-%      supposed to remove, instead of only inferring it from the axis
-%      rescaling afterward.
-%   2) a FLAT-SUBJECT CHECK printed before each figure: flags any
-%      subject whose raw (pre-exclusion) values across reps/levels have
-%      near-zero range or coefficient of variation. This is what caught
-%      s23H sitting dead flat at 10.3 across all 10 TSSF repetitions --
-%      it was never in tssf_known_bad (only tssv_known_bad), so it kept
-%      showing up as the "min" in both BEFORE and AFTER panels, making
-%      them look identical. The check also surfaces any other similarly
-%      flat subjects you noticed but that aren't in either list yet.
-%
-% Nothing else changed from what you pasted -- local_ternary and any
-% other helper functions you already have elsewhere in your file are
-% unaffected and still required.
+function local_trend_plot(T_raw, T_after, oc, oc_label, x_mode, known_bad, cfg, do_log)
+% T_raw: unexcluded table (BEFORE panel, and the source for the
+%   FLAT-SUBJECT CHECK and known_bad highlighting).
+% T_after: the table to draw the AFTER panel from. Pass the real
+%   force_vibration_features_clean.mat table for tssv/tssf (applies
+%   BOTH whole-subject and per-acquisition exclusions via isfinite()).
+%   Pass the SAME table as T_raw when there's no separate clean file
+%   (EDA/eye/perf) -- that falls back to a known_bad subject-name mask.
+    use_clean_file = ~isequal(T_raw, T_after);
 
-clear; clc; cfg = config();
-if ~exist(fullfile(cfg.output_root,'figures'),'dir'), mkdir(fullfile(cfg.output_root,'figures')); end
+    if strcmp(x_mode,'level'), xlab = 'Training Level'; else, xlab = 'Repetition'; end
 
-tssv_known_bad = {'subject_s02N','subject_s05N','subject_s09N','subject_s10H','subject_s11N','subject_s12H','subject_s23H','subject_s44N'};
-tssf_known_bad = {'subject_s02N','subject_s05N','subject_s03H','subject_s04H'};
-eda_known_bad  = {};                                   % fill in if you have EDA-specific exclusions
-eye_known_bad  = {'subject_s12H','subject_s15H'};      % per the methods doc
-perf_known_bad = {};
+    [Ttr_before, x_before, n_x] = local_prep_trend_table(T_raw, oc, x_mode);
+    if isempty(Ttr_before), fprintf('[skip] %s (%s): no rows.\n', oc, x_mode); return; end
 
-
-%% ENGINE A: raw-data trend by level or repetition
-
-FV = load(fullfile(cfg.output_root,'force_vibration_features.mat'),'T'); FV = FV.T;
-local_trend_plot(FV, 'tssv', 'log(TSSV)', 'level', tssv_known_bad, cfg, true);
-local_trend_plot(FV, 'tssf', 'log(TSSF)', 'level', tssf_known_bad, cfg, true);
-local_trend_plot(FV, 'tssv', 'log(TSSV)', 'rep',   tssv_known_bad, cfg, true);
-local_trend_plot(FV, 'tssf', 'log(TSSF)', 'rep',   tssf_known_bad, cfg, true);
-
-if isfile(fullfile(cfg.output_root,'perf_features.mat'))
-    PERF = load(fullfile(cfg.output_root,'perf_features.mat'),'T'); PERF = PERF.T;
-    local_trend_plot(PERF, 'duration_s',   'Completion time (s)',  'rep',   perf_known_bad, cfg, false);
-    local_trend_plot(PERF, 'n_collisions', 'Collisions per trial', 'level', perf_known_bad, cfg, false);
-end
-
-function local_trend_plot(T, oc, oc_label, x_mode, known_bad, cfg, do_log)
-    Ttr = T(strcmp(T.phase_type,'training') & isfinite(T.(oc)), :);
-    if strcmp(x_mode,'level')
-        Ttr = Ttr(isfinite(Ttr.level),:);
-        n_x = 5; xlab = 'Training Level';
-        x_all = Ttr.level;
+    if use_clean_file
+        [Ttr_after, x_after, ~] = local_prep_trend_table(T_after, oc, x_mode);
     else
-        x_all = str2double(regexp(Ttr.acquisition,'\d+','match','once'));
-        n_x = max(x_all); xlab = 'Repetition';
+        keep = ~ismember(Ttr_before.subject, known_bad);
+        Ttr_after = Ttr_before(keep,:); x_after = x_before(keep);
     end
-    if isempty(Ttr), fprintf('[skip] %s (%s): no rows.\n', oc, x_mode); return; end
 
-    %% --- FLAT-SUBJECT CHECK -------------------------------------------
-    % Raw per-trial values (not subject means), computed BEFORE exclusion,
-    % so it catches a subject sitting at a near-constant value regardless
-    % of whether anyone has flagged them yet.
+    %% --- FLAT-SUBJECT CHECK (raw, before exclusion) -----------------------
     fprintf('\n--- FLAT-SUBJECT CHECK: %s by %s (raw per-trial values, before exclusion) ---\n', oc, x_mode);
-    subj_all = unique(Ttr.subject);
+    subj_all = unique(Ttr_before.subject);
     for si = 1:numel(subj_all)
         s = subj_all{si};
-        v = Ttr.(oc)(strcmp(Ttr.subject,s));
+        v = Ttr_before.(oc)(strcmp(Ttr_before.subject,s));
         if do_log, v = v(v>0); end
         if numel(v) < 2, continue; end
         rng_v = max(v) - min(v);
@@ -166,12 +139,12 @@ function local_trend_plot(T, oc, oc_label, x_mode, known_bad, cfg, do_log)
     tl = tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
     title(tl, sprintf('%s by %s -- before vs after subject exclusion', oc_label, lower(xlab)), 'FontWeight','bold', 'Interpreter','tex');
 
-    keep_masks = {true(height(Ttr),1), ~ismember(Ttr.subject, known_bad)};
-    panel_label = {'BEFORE exclusion', 'AFTER exclusion'};
+    panel_tables = {Ttr_before, Ttr_after};
+    panel_x      = {x_before,   x_after};
+    panel_label  = {'BEFORE exclusion', 'AFTER exclusion'};
 
     for pnl = 1:2
-        mask = keep_masks{pnl};
-        Tp = Ttr(mask,:); xp = x_all(mask);
+        Tp = panel_tables{pnl}; xp = panel_x{pnl};
         nexttile; hold on;
         subj_list = unique(Tp.subject);
 
@@ -192,8 +165,9 @@ function local_trend_plot(T, oc, oc_label, x_mode, known_bad, cfg, do_log)
 
             % known_bad subjects drawn thicker/darker, no text label --
             % lets you SEE which lines exclusion removes. In the AFTER
-            % panel this is a no-op: known_bad subjects are already
-            % filtered out of Tp, so is_bad is never true there.
+            % panel this is a no-op: known_bad subjects aren't in Tp
+            % there (either filtered via isfinite() on the clean table,
+            % or via the known_bad mask), so is_bad is never true there.
             is_bad = ismember(s, known_bad);
             if is_bad
                 lw = 2.0; alpha_v = 0.55;
@@ -243,23 +217,45 @@ function local_trend_plot(T, oc, oc_label, x_mode, known_bad, cfg, do_log)
     fprintf('Saved %s_%s_trend_before_after.png\n', oc, x_mode);
 end
 
+function [Ttr, x_all, n_x] = local_prep_trend_table(T, oc, x_mode)
+    Ttr = T(strcmp(T.phase_type,'training') & isfinite(T.(oc)), :);
+    if strcmp(x_mode,'level')
+        Ttr = Ttr(isfinite(Ttr.level),:);
+        n_x = 5;
+        x_all = Ttr.level;
+    else
+        x_all = str2double(regexp(Ttr.acquisition,'\d+','match','once'));
+        n_x = max(x_all);
+    end
+end
 
 
+%% ========================================================================
 %% ENGINE B: paired pre/post transfer
+%% ========================================================================
 
-function local_paired_plot(T, oc, oc_label, phase_type, phase_pre, phase_post, known_bad, cfg)
-    Tph = T(strcmp(T.phase_type,phase_type) & isfinite(T.(oc)) & T.(oc)>0, :);
-    if isempty(Tph), fprintf('[skip] %s %s->%s: no rows.\n', oc, phase_pre, phase_post); return; end
+function local_paired_plot(T_raw, T_after, oc, oc_label, phase_type, phase_pre, phase_post, known_bad, cfg)
+% Same T_raw/T_after convention as local_trend_plot.
+    use_clean_file = ~isequal(T_raw, T_after);
+
+    Tph_before = T_raw(strcmp(T_raw.phase_type,phase_type) & isfinite(T_raw.(oc)) & T_raw.(oc)>0, :);
+    if isempty(Tph_before), fprintf('[skip] %s %s->%s: no rows.\n', oc, phase_pre, phase_post); return; end
+
+    if use_clean_file
+        Tph_after = T_after(strcmp(T_after.phase_type,phase_type) & isfinite(T_after.(oc)) & T_after.(oc)>0, :);
+    else
+        Tph_after = Tph_before(~ismember(Tph_before.subject, known_bad), :);
+    end
 
     fig = figure('Position',[100 100 1300 500]);
     tl = tiledlayout(1,2,'TileSpacing','compact','Padding','compact');
     title(tl, sprintf('%s: %s to %s -- before vs after subject exclusion', oc_label, phase_pre, phase_post), 'FontWeight','bold', 'Interpreter','tex');
 
-    keep_masks = {true(height(Tph),1), ~ismember(Tph.subject, known_bad)};
-    panel_label = {'BEFORE exclusion', 'AFTER exclusion'};
+    panel_tables = {Tph_before, Tph_after};
+    panel_label  = {'BEFORE exclusion', 'AFTER exclusion'};
 
     for pnl = 1:2
-        Tp = Tph(keep_masks{pnl}, :);
+        Tp = panel_tables{pnl};
         nexttile; hold on;
         subj_list = unique(Tp.subject);
         pre_v  = nan(numel(subj_list),1);
@@ -296,13 +292,6 @@ function local_paired_plot(T, oc, oc_label, phase_type, phase_pre, phase_post, k
         valid_idx = find(valid);
 
         % ---- DEBUG: full subject-by-subject dump, sorted by delta -----
-        % Prints every valid subject's pre/post/delta plus how many raw
-        % rows were averaged into pre/post (catches a subject silently
-        % getting pooled from very few -- or unexpectedly many -- rows).
-        % Compare this printout against what the figure shows: if the
-        % printed max/min subject doesn't match the one the figure
-        % highlights, that's a plotting bug; if it DOES match but looks
-        % wrong on the chart, the issue is upstream in the data itself.
         fprintf('\n--- DEBUG %s | %s | %s -> %s | %s ---\n', oc, phase_type, phase_pre, phase_post, panel_label{pnl});
         fprintf('%-18s %5s %10s %10s %10s %6s %6s\n', 'Subject','Grp','pre','post','delta','n_pre','n_post');
         [~,ord] = sort(delta(valid_idx));
@@ -333,7 +322,6 @@ function local_paired_plot(T, oc, oc_label, phase_type, phase_pre, phase_post, k
         xlim([0.7 2.6]); xticks([1 2]); xticklabels({phase_pre, phase_post});
         ylabel(oc_label, 'Interpreter','tex');
         title(sprintf('%s (n=%d paired subjects)', panel_label{pnl}, sum(valid)), 'FontSize',11);
-       
     end
     saveas(fig, fullfile(cfg.output_root,'figures', sprintf('%s_%s_%s_paired_before_after.png', oc, phase_pre, phase_post)));
     fprintf('Saved %s_%s_%s_paired_before_after.png\n', oc, phase_pre, phase_post);

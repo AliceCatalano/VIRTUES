@@ -20,7 +20,7 @@ function plot_sessiontiming_paired_estimation(cfg, first_n, last_n)
     if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
     perf_file = fullfile(cfg.output_root, 'perf_features.mat');
-    fv_file   = fullfile(cfg.output_root, 'force_vibration_features.mat');
+    fv_file   = fullfile(cfg.output_root, 'force_vibration_features_clean.mat');
     if ~isfile(perf_file) || ~isfile(fv_file)
         error('plot_sessiontiming_paired_estimation: run perf_extract_features(cfg) and perf_extract_force_vibration_features(cfg) first.');
     end
@@ -36,7 +36,7 @@ function plot_sessiontiming_paired_estimation(cfg, first_n, last_n)
         st_results = loaded;
     end
 
-    outcomes = {'duration_s', 'tssf_raw', 'tssv'};
+    outcomes = {'duration_s', 'tssf', 'tssv'};
     fig = figure('Name', 'Training start-vs-end (log scale) paired estimation', 'Position', [50 50 1300 380]);
     sgtitle(sprintf('Training: first %d vs last %d repetitions (pooled across Levels), log scale -- individual subjects (thin) + group mean \\pm 95%% CI (bold)', first_n, last_n), ...
         'FontWeight', 'bold');

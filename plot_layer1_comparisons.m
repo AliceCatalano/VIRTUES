@@ -45,7 +45,7 @@ function plot_layer1_comparisons(cfg, family_label, phase_type, phase_pre, phase
         'pupil_slope_norm',  sources.eye
         'gaze_dispersion',   sources.eye
         'saccade_rate',      sources.eye
-        'tssf_raw',          sources.force_vibration
+        'tssf',          sources.force_vibration
         'tssv',              sources.force_vibration
         'duration_s',        sources.perf
         'n_collisions',      sources.perf

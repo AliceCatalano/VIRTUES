@@ -36,7 +36,7 @@ function plot_layer1_levels(cfg)
         'pupil_slope_norm',  sources.eye
         'gaze_dispersion',   sources.eye
         'saccade_rate',      sources.eye
-        'tssf_raw',          sources.force_vibration
+        'tssf',          sources.force_vibration
         'tssv',              sources.force_vibration
         'duration_s',        sources.perf
         'n_collisions',      sources.perf
@@ -142,7 +142,7 @@ end
 
 function sources = local_load_sources(cfg)
     sources = struct('eda', [], 'eye', [], 'perf', [], 'force_vibration', []);
-    files = {'eda', 'eda_features.mat'; 'eye', 'eye_features.mat'; ...
+    files = {'eda', 'eda_features.mat'; 'eye', 'eye_features_v2.mat'; ...
         'perf', 'perf_features.mat'; 'force_vibration', 'force_vibration_features.mat'};
     for i = 1:size(files, 1)
         path = fullfile(cfg.output_root, files{i, 2});

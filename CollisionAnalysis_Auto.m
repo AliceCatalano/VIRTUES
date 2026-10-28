@@ -21,7 +21,7 @@
 clear; clc; close all;
 
 % SECTION 1 — FIXED PARAMETERS
-BASE_FOLDER   = '~/Desktop/Virtues_Data';
+BASE_FOLDER   = '~/Desktop/Virtues_Data/';
 
 TARGET_FS            = 500;        % Hz — accelerometer processing rate (not used for plotting anymore)
 AUDIO_BP_LOW         = 80;         % Hz
@@ -40,9 +40,9 @@ INTENSITY_WIN_SEC    = 0.10;       % ± half-window around each collision (s)
 
 % SECTION 2 — ASK USER FOR SUBJECT ONLY
 base = expanduser(BASE_FOLDER);
-SUBJECTS_TO_RUN = {};
+SUBJECTS_TO_RUN = {'subject_io'};
 if isempty(SUBJECTS_TO_RUN)
-    d = dir(fullfile(base, 'subject_*'));
+    d = dir(fullfile(base, 'subject_io'));
     SUBJECTS_TO_RUN = {d([d.isdir]).name};
 end
 sprintf('Subjects found (%d): %s\n\n', numel(SUBJECTS_TO_RUN), strjoin(SUBJECTS_TO_RUN, ', '));
@@ -233,7 +233,7 @@ for subjIdx = 1:numel(SUBJECTS_TO_RUN)
                 AUDIO_BP_LOW, AUDIO_BP_HIGH, AUDIO_RMS_WIN_SEC, thresh, INTENSITY_WIN_SEC);
     
             out_file = fullfile(acq_folder, 'collision_results.mat');
-            save(out_file, 'results');
+            %save(out_file, 'results');
     
             tag = 'ok';
             if flagged, tag = 'CHECK'; end

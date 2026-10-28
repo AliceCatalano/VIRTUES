@@ -1,10 +1,10 @@
 %% Setup
 cfg=config();
 COLOR_N=[55 138 221]/255; COLOR_H=[212 83 126]/255;
-
-%% Extract TSSV
 all_phases=[cfg.baseline_phases,cfg.training_levels,cfg.test_phases];
 rows={};
+%% Extract TSSV
+
 
 for si=1:numel(cfg.all_subjects)
     subj=cfg.all_subjects{si}; group=subj(end); haptic=strcmp(group,'H');
