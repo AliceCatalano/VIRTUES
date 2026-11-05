@@ -36,7 +36,7 @@ function results = layer1_simple_comparisons(cfg, phase_type, phase_pre, phase_p
 % distinct scientific questions, not one family of 55 tests.
 %
 % outcome list: scl_mean, scr_freq, scr_mean_amp (EDA); pupil_mean,
-% pupil_slope_norm, gaze_dispersion, saccade_rate (eye); tssf_raw, tssv
+% pupil_slope_norm, gaze_dispersion, saccade_rate (eye); tssf, tssv
 % (force/vibration); duration_s, n_collisions (performance).
 % collision_scr_amp_mean / collision_pupil_response_mean are deliberately
 % EXCLUDED here -- those are already collision-restricted and belong to
@@ -57,7 +57,7 @@ function results = layer1_simple_comparisons(cfg, phase_type, phase_pre, phase_p
         'pupil_slope_norm',  sources.eye
         'gaze_dispersion',   sources.eye
         'saccade_rate',      sources.eye
-        'tssf_raw',          sources.force_vibration
+        'tssf',          sources.force_vibration
         'tssv',              sources.force_vibration
         'duration_s',        sources.perf
         'n_collisions',      sources.perf

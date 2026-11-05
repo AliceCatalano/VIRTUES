@@ -13,7 +13,7 @@ function results = layer1_levels_comparisons(cfg)
 %      (one row per group in omnibus_within_group). Level 1 (easiest) is the reference, matching the "level k vs level 1" contrast
 %      convention already used in plot_level_divergence.m / the LMMresults tables.
 %
-%2. between_group_per_level at each of the 5 levels separately: independent-samples N vs H, t-test + Wilcoxon rank-sum.
+%2. between_group_per_level at each of the 5 levels separately: independent-samples N vs H, t-test + Wilcoxon rasdk-sum.
 %
 % 3. between_levels_pooled ("between levels", both groups combined) Level_k vs Level_1 (k=2..5), paired t-test + Wilcoxon signed-rank,
 %      pooling N and H together, PLUS one pooled omnibus Friedman test per outcome (omnibus_pooled) -- this is "does difficulty matter at
@@ -32,7 +32,7 @@ function results = layer1_levels_comparisons(cfg)
         'pupil_slope_norm',  sources.eye
         'gaze_dispersion',   sources.eye
         'saccade_rate',      sources.eye
-        'tssf_raw',          sources.force_vibration
+        'tssf',          sources.force_vibration
         'tssv',              sources.force_vibration
         'duration_s',        sources.perf
         'n_collisions',      sources.perf

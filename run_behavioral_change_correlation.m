@@ -19,7 +19,7 @@
 %
 % Requires performance_lmm_results.mat (run run_performance_lmms.m first).
 
-clear;
+clear;clc
 cfg = config();
 
 res_file = fullfile(cfg.output_root, 'performance_lmm_results.mat');

@@ -4,7 +4,7 @@
 % check started: does either measure's relationship with trial duration
 % reflect a structural/statistical artifact rather than physiology?
 %
-%   SACCADE RATE: precomputed as n_saccades / (valid_duration_s/60) and
+%   SACCADE RATE: precomputed as saccade_count / (valid_duration_s/60) and
 %   then modeled as an ordinary Gaussian LMM outcome (Table 1). Unlike
 %   pupil_slope, this isn't a systematic BIAS toward a particular value of
 %   duration (dividing a count by its own exposure time is the textbook-
@@ -13,7 +13,7 @@
 %   trial is noisier (higher sampling variance) than one from a LONG
 %   trial, exactly the situation a Poisson-with-offset GLMM is built to
 %   handle correctly and a plain Gaussian model is not. This refits
-%   n_saccades directly as Poisson(log(valid_duration_s) as offset) and
+%   saccade_count directly as Poisson(log(valid_duration_s) as offset) and
 %   compares the Haptic x Repetition conclusion against the current
 %   Gaussian-on-the-rate model.
 %
@@ -60,7 +60,7 @@ T = loaded.T;
 % =========================================================================
 fprintf('=== Part 1: saccade_rate -- Poisson-with-offset vs. Gaussian-on-the-rate ===\n');
 
-Ttr = Teye(strcmp(Teye.phase_type, 'training') & isfinite(Teye.n_saccades) & Teye.valid_duration_s > 0, :);
+Ttr = Teye(strcmp(Teye.phase_type, 'training') & isfinite(Teye.saccade_count) & Teye.valid_duration_s > 0, :);
 Ttr.subject_cat = categorical(Ttr.subject);
 Ttr.level_cat   = categorical(Ttr.level);
 Ttr.haptic_num  = double(Ttr.haptic);
@@ -77,9 +77,9 @@ row_g = cellfun(@(n) isequal(sort(strsplit(n, ':')), target_terms), fe_g.Name);
 fprintf('Haptic x Repetition (Gaussian on rate): beta=%.4f, SE=%.4f, p=%.4f\n', ...
     fe_g.Estimate(row_g), fe_g.SE(row_g), fe_g.pValue(row_g));
 
-fprintf('\n-- Alternative: Poisson GLMM on n_saccades, log(valid_duration_s) as offset --\n');
-mdl_poiss = fitglme(Ttr, 'n_saccades ~ haptic_num*level_cat + haptic_num*repetition + (1 + repetition | subject_cat) + offset(log_exposure_min)', ...
-    'Distribution', 'poisson', 'FitMethod', 'Laplace');
+fprintf('\n-- Alternative: Poisson GLMM on saccade_count, log(valid_duration_s) as offset --\n');
+mdl_poiss = fitglme(Ttr, 'saccade_count ~ haptic_num*level_cat + haptic_num*repetition + (1 + repetition | subject_cat) + Offset(log_exposure_min)', ...
+'Distribution', 'poisson', 'FitMethod', 'Laplace');
 fe_p = mdl_poiss.Coefficients;
 row_p = cellfun(@(n) isequal(sort(strsplit(n, ':')), target_terms), fe_p.Name);
 fprintf('Haptic x Repetition (Poisson, log-rate scale): beta=%.4f, SE=%.4f, p=%.4f\n', ...
