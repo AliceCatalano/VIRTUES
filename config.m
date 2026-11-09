@@ -1,6 +1,6 @@
 function cfg = config()
     cfg.data_root   = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data');
-    cfg.output_root = fullfile(expanduser('~'), 'Desktop/Virtues_Data', 'GSR_Analysis');
+    cfg.output_root = fullfile(expanduser('~'), 'Desktop/Virtues_Data', 'Analysis');
     raw_list = {'s02N','s05N','s07N','s09N','s11N','s14N','s16N','s18N','s20N','s22N','s24N','s27N','s28N','s30N','s32N','s34N','s36N','s37N','s39N','s42N','s43N','s44N','s46N','s48N',... 
        's03H','s04H','s06H','s08H','s10H','s12H','s13H','s15H','s17H','s19H','s21H', 's23H','s25H','s26H','s29H','s31H','s33H','s35H','s38H','s40H','s41H', 's45H','s47H'};  %{}
     cfg.force_cal_path = fullfile(expanduser('~'), 'Desktop', 'Virtues_Data', 'FT29125.cal');

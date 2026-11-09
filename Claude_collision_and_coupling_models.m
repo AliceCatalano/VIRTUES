@@ -16,7 +16,8 @@
 
 clear; clc; cfg = config();
 out_dir = fullfile(cfg.output_root,'Claude_outputs','collision_coupling'); if ~exist(out_dir,'dir'), mkdir(out_dir); end
-CI = load(fullfile(cfg.output_root,'collision_impact_features.mat'),'T_impact'); CI = CI.T_impact;
+CI = load(fullfile(cfg.output_root,'collision_impact_features.mat'),'T_impact'); 
+CI = CI.T_impact;
 Ec = load(fullfile(cfg.output_root,'eda_features_v2.mat'),'T_coll'); Ec = Ec.T_coll;
 Yc = load(fullfile(cfg.output_root,'eye_features_v2.mat'),'T_coll'); Yc = Yc.T_coll;
 CIt = CI(strcmp(CI.phase_type,'training'),:);
@@ -37,17 +38,24 @@ sets = {'EDA',JE;'Pupil',JP};
 for m = 1:2
     lab = sets{m,1}; J0 = local_prep(sets{m,2});
     for excl = [false true]
-        J = J0; if excl, J = J(~strcmp(J.subject,'subject_s16N'),:); end
+        J = J0; 
+        if excl, J = J(~strcmp(J.subject,'subject_s16N'),:); end
         J.log_acc = J.log_acc_raw - mean(J.log_acc_raw);
         % --- Group difference at each level ---
         for lv = 1:5
             D = J(J.level==lv,:);
-            xN = D.y(~D.haptic); xH = D.y(D.haptic);
+            xN = D.y(~D.haptic); 
+            xH = D.y(D.haptic);
+
             [~,p_naive] = ttest2(xH,xN,'Vartype','unequal');
+
             sp = sqrt(((numel(xN)-1)*var(xN)+(numel(xH)-1)*var(xH))/(numel(xN)+numel(xH)-2));
             d_naive = (mean(xH)-mean(xN))/sp;
-            subjN = groupsummary(D(~D.haptic,:),'subject','mean','y'); subjH = groupsummary(D(D.haptic,:),'subject','mean','y');
+            subjN = groupsummary(D(~D.haptic,:),'subject','mean','y'); 
+            subjH = groupsummary(D(D.haptic,:),'subject','mean','y');
+
             [~,p_subj] = ttest2(subjH.mean_y,subjN.mean_y,'Vartype','unequal');
+
             p_rank = ranksum(subjH.mean_y,subjN.mean_y);
             mdl = fitlme(D,'y ~ haptic_num + log_acc + (1+log_acc|subject_cat) + (1|trial_id)','FitMethod','REML');
             [b,se,p,df] = local_term(mdl,'haptic_num');
@@ -85,7 +93,8 @@ writetable(TV,fullfile(out_dir,'collision_variability.csv'));
 D = CIt(isfinite(CIt.peak_accel_g_nidaq) & CIt.peak_accel_g_nidaq>0,:);
 rowsI = {};
 for excl = [false true]
-    E2 = D; if excl, E2 = E2(~strcmp(E2.subject,'subject_s16N'),:); end
+    E2 = D; 
+    if excl, E2 = E2(~strcmp(E2.subject,'subject_s16N'),:); end
     [~,pks] = kstest2(E2.peak_accel_g_nidaq(~E2.haptic),E2.peak_accel_g_nidaq(E2.haptic));
     G = groupsummary(E2,{'subject','haptic'},'median','peak_accel_g_nidaq');
     pr = ranksum(G.median_peak_accel_g_nidaq(G.haptic),G.median_peak_accel_g_nidaq(~G.haptic));

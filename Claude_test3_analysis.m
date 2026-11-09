@@ -103,11 +103,17 @@ function [v,flag,covered] = local_force(p,a,b,cfg,C)
     % Rate over the time actually recorded inside [a,b]. Requires at least 60 s when used for the whole task.
     v = NaN; flag = 1; covered = 0; L = load(p,'FORCE'); t = L.FORCE.time_rel(:); X = L.FORCE.data; w = t>=a&t<=b;
     if sum(w)<10, return; end
-    covered = t(find(w,1,'last'))-t(find(w,1)); if covered<60, return; end
+    covered = t(find(w,1,'last'))-t(find(w,1)); 
+    if covered<60, return; end
     if mean(arrayfun(@(c) numel(unique(X(w,c))),1:size(X,2)))<50, return; end
-    pre = t>=(a-1)&t<a; if sum(pre)<3, pre = t<(t(1)+1); end
-    bias = mean(X(pre,:),1,'omitnan'); Fb = (C*(X(pre,:)-bias)')'; mb = sqrt(sum(Fb(:,1:3).^2,2)); nf = median(mb)+cfg.force_noise_k_mad*mad(mb,1);
-    Fc = (C*(X(w,:)-bias)')'; m = sqrt(sum(Fc(:,1:3).^2,2));
+    pre = t>=(a-1)&t<a; 
+    if sum(pre)<3, pre = t<(t(1)+1); end
+    bias = mean(X(pre,:),1,'omitnan'); 
+    Fb = (C*(X(pre,:)-bias)')'; 
+    mb = sqrt(sum(Fb(:,1:3).^2,2)); 
+    nf = median(mb)+cfg.force_noise_k_mad*mad(mb,1);
+    Fc = (C*(X(w,:)-bias)')'; 
+    m = sqrt(sum(Fc(:,1:3).^2,2));
     m(m<nf) = 0; v = (sum(m.^2)*covered/sum(w))/(covered/60); flag = 0;
 end
 function [v,flag] = local_accel(p,a,b,cfg)
